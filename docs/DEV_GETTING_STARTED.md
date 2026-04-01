@@ -20,6 +20,7 @@ Optional but recommended:
 git clone https://github.com/obrienma/synapse-l4
 cd synapse-l4
 uv sync
+uv add "logfire[fastapi,httpx]" redis pydantic
 ```
 
 `uv sync` installs all dependencies from `pyproject.toml` into a managed virtual environment. No manual `venv` or `pip install` needed.
@@ -61,7 +62,7 @@ Config is validated at startup by `config.py` using Pydantic `BaseSettings`. If 
 ## 3. Run the Dev Server
 
 ```bash
-uv run fastapi dev src/main.py
+uv run fastapi dev main.py
 ```
 
 FastAPI starts with hot reload on `http://localhost:8000`.
@@ -144,7 +145,7 @@ All modules are typed. `config.py` and `src/models/` are held to strict `--disal
 
 With both EventHorizon and Sentinel-L7 running:
 
-1. Start Synapse-L4 dev server (`uv run fastapi dev src/main.py`)
+1. Start Synapse-L4 dev server (`uv run fastapi dev main.py`)
 2. Start the EventHorizon WS consumer (`uv run python -m src.clients.eventhorizon`)
 3. Seed EventHorizon: `cd ../EventHorizon && npm run seed`
 4. Watch Logfire or the `/metrics` endpoint for Axiom emission counts

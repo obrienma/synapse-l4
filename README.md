@@ -47,7 +47,7 @@ flowchart LR
         E["Emit\nsrc/nodes/emitter.py"]
     end
 
-    E -->|immutable JSON Axiom| SL7["Sentinel-L7\n(HTTP / Redis Streams)"]
+    E -->|XADD synapse:axioms| SL7["Sentinel-L7\n(Redis Streams)"]
 ```
 
 Each stage is independently testable. Data flows one direction — no stage calls back to a previous stage.
@@ -104,10 +104,10 @@ uv sync
 
 # Configure environment
 cp .env.example .env
-# Edit .env — add OPENAI_API_KEY, SENTINEL_L7_URL, etc.
+# Edit .env — add OPENAI_API_KEY, SENTINEL_REDIS_URL, etc.
 
 # Run
-uv run fastapi dev src/main.py
+uv run fastapi dev main.py
 ```
 
 ---
@@ -115,7 +115,7 @@ uv run fastapi dev src/main.py
 ## Commands
 
 ```bash
-uv run fastapi dev src/main.py   # FastAPI dev server (hot reload, :8000)
+uv run fastapi dev main.py   # FastAPI dev server (hot reload, :8000)
 uv run pytest                    # Run full test suite
 uv run pytest -x                 # Stop on first failure
 uv run mypy src/                 # Type check

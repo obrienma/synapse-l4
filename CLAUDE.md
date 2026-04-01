@@ -97,7 +97,7 @@ Key vars: `OPENAI_API_KEY` (or `ANTHROPIC_API_KEY`), `SENTINEL_L7_URL`, `EVENTHO
 ## Commands
 
 ```bash
-uv run fastapi dev src/main.py   # Start FastAPI dev server (hot reload)
+uv run fastapi dev main.py       # Start FastAPI dev server (hot reload)
 uv run pytest                    # Run test suite
 uv run mypy src/                 # Type check
 uv run pytest-watch              # Watch mode
