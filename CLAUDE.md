@@ -127,7 +127,7 @@ uv run pytest-watch              # Watch mode
 2. ~~`src/models/axiom.py` — shared Axiom schema~~ ✓ (with `axiom_test.py`; added `AxiomDraft`)
 3. ~~`src/nodes/extractor.py` — Instructor extraction node~~ ✓ (with `extractor_test.py`)
 4. ~~`src/nodes/judge.py` + `src/evaluation/rules.py` — Judge pass~~ ✓ (with `judge_test.py`, `rules_test.py`)
-5. `src/nodes/emitter.py` + `src/clients/sentinel.py` — emission to Sentinel-L7
+5. ~~`src/nodes/emitter.py` + `src/clients/sentinel.py` — emission to Sentinel-L7~~ ✓ (with `emitter_test.py`, `sentinel_test.py`)
 6. `src/api/ingest.py` + `src/main.py` — FastAPI ingestion endpoint
 7. `src/clients/eventhorizon.py` — WebSocket consumer
 8. `src/observation/` — Logfire instrumentation
@@ -142,7 +142,7 @@ uv run pytest-watch              # Watch mode
 - **Don't add features beyond what's asked.** No extra error handling, no extra abstractions, no unrequested refactors.
 - **No doc files** unless explicitly requested. Update `CLAUDE.md` Build Status section after each completed step.
 - **Tests are written alongside each phase — not after.** A phase is not complete until its colocated tests pass. See [docs/TESTING.md](docs/TESTING.md) for per-phase test strategy.
-- **Maintain `LEARNING_LOG.md`**: After each phase, append new entries for every pattern used, anti-pattern avoided, challenge encountered, or design decision made. Use the established entry format (Pattern / Anti-Pattern / Challenge / Decision sections with **Q:**/**A:** flashcard blocks).
+- **Maintain `LEARNING_LOG.md`**: Writing to `LEARNING_LOG.md` is a required step at the end of every phase — not optional. A phase is not complete until the log entry is written. Append entries for every pattern used, anti-pattern avoided, challenge encountered, or design decision made. Use the established entry format (Pattern / Anti-Pattern / Challenge / Decision sections with **Q:**/**A:** flashcard blocks).
 - All Pydantic models use explicit `model_config` — never rely on global config defaults.
 - Update the Build Status section in this file after each completed step.
 

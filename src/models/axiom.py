@@ -79,3 +79,19 @@ class ExtractionError(Exception):
         super().__init__(detail)
         self.detail = detail
         self.raw_payload = raw_payload
+
+
+class EmitError(Exception):
+    """Raised by the Emitter when delivery to Sentinel-L7 fails."""
+
+    def __init__(
+        self,
+        detail: str,
+        axiom: "Axiom",
+        *,
+        status_code: int | None = None,
+    ) -> None:
+        super().__init__(detail)
+        self.detail = detail
+        self.axiom = axiom
+        self.status_code = status_code
