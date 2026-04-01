@@ -15,8 +15,9 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-4o-mini"
     instructor_max_retries: int = 3
 
-    # Downstream
-    sentinel_l7_url: AnyHttpUrl
+    # Downstream — Redis Streams delivery (ADR-0016)
+    sentinel_redis_url: str  # Upstash Redis URL, e.g. rediss://...@host:port
+    sentinel_l7_url: AnyHttpUrl | None = None  # retained for health checks / future use
 
     # Upstream (optional)
     eventhorizon_ws_url: AnyWebsocketUrl | None = None

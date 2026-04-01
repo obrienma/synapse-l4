@@ -13,6 +13,7 @@ dependencies = [
     "logfire>=3.0",
     "httpx>=0.28",
     "websockets>=13",
+    "redis[asyncio]>=5.2",
 ]
 
 [dependency-groups]

@@ -18,6 +18,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import logfire
+import redis.asyncio as aioredis
 
 from config import settings
 from src.clients.sentinel import SentinelClient
@@ -25,7 +26,7 @@ from src.models.axiom import Axiom, AxiomDraft, EmitError, RawTelemetry
 
 
 def _default_client() -> SentinelClient:
-    return SentinelClient(str(settings.sentinel_l7_url))
+    return SentinelClient(aioredis.from_url(settings.sentinel_redis_url))
 
 
 async def emit(

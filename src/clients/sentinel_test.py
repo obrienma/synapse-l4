@@ -1,15 +1,13 @@
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock, MagicMock, patch
 
-import httpx
 import pytest
-import respx
 
-from src.clients.sentinel import SentinelClient
+from src.clients.sentinel import AXIOMS_STREAM, SentinelClient
 from src.models.axiom import Axiom, EmitError
 
-BASE_URL = "http://sentinel-l7.test"
-AXIOMS_URL = f"{BASE_URL}/api/axioms"
 
+# ── Fixtures ──────────────────────────────────────────────────────────────────
 
 def valid_axiom() -> Axiom:
     return Axiom(
@@ -21,97 +19,66 @@ def valid_axiom() -> Axiom:
     )
 
 
-def make_client(http_client: httpx.AsyncClient) -> SentinelClient:
-    return SentinelClient(BASE_URL, http_client=http_client)
+def make_client(xadd_side_effect: Exception | None = None) -> tuple[SentinelClient, MagicMock]:
+    mock_redis = MagicMock()
+    mock_redis.xadd = AsyncMock(side_effect=xadd_side_effect)
+    return SentinelClient(mock_redis), mock_redis
 
 
 # ── Success ───────────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
-@respx.mock
-async def test_post_axiom_succeeds_on_201() -> None:
-    respx.post(AXIOMS_URL).mock(return_value=httpx.Response(201))
-    async with httpx.AsyncClient() as http:
-        await make_client(http).post_axiom(valid_axiom())
+async def test_post_axiom_calls_xadd_on_correct_stream() -> None:
+    client, mock_redis = make_client()
+    await client.post_axiom(valid_axiom())
+    mock_redis.xadd.assert_called_once()
+    stream_key = mock_redis.xadd.call_args.args[0]
+    assert stream_key == AXIOMS_STREAM
 
 
 @pytest.mark.asyncio
-@respx.mock
-async def test_post_axiom_succeeds_on_200() -> None:
-    respx.post(AXIOMS_URL).mock(return_value=httpx.Response(200))
-    async with httpx.AsyncClient() as http:
-        await make_client(http).post_axiom(valid_axiom())
-
-
-@pytest.mark.asyncio
-@respx.mock
 async def test_post_axiom_sends_all_axiom_fields() -> None:
-    route = respx.post(AXIOMS_URL).mock(return_value=httpx.Response(201))
-    async with httpx.AsyncClient() as http:
-        await make_client(http).post_axiom(valid_axiom())
-
-    request_body = route.calls.last.request
-    import json
-    payload = json.loads(request_body.content)
-    assert payload["status"] == "critical"
-    assert payload["metric_value"] == 94.0
-    assert payload["anomaly_score"] == 0.91
-    assert payload["source_id"] == "sensor-01"
-    assert "emitted_at" in payload
-
-
-# ── HTTP error responses ──────────────────────────────────────────────────────
-
-@pytest.mark.asyncio
-@respx.mock
-async def test_post_axiom_raises_emit_error_on_422() -> None:
-    respx.post(AXIOMS_URL).mock(return_value=httpx.Response(422))
-    async with httpx.AsyncClient() as http:
-        with pytest.raises(EmitError) as exc_info:
-            await make_client(http).post_axiom(valid_axiom())
-    assert exc_info.value.status_code == 422
+    client, mock_redis = make_client()
+    await client.post_axiom(valid_axiom())
+    fields = mock_redis.xadd.call_args.args[1]
+    assert fields["status"] == "critical"
+    assert fields["metric_value"] == "94.0"
+    assert fields["anomaly_score"] == "0.91"
+    assert fields["source_id"] == "sensor-01"
+    assert "emitted_at" in fields
 
 
 @pytest.mark.asyncio
-@respx.mock
-async def test_post_axiom_raises_emit_error_on_500() -> None:
-    respx.post(AXIOMS_URL).mock(return_value=httpx.Response(500))
-    async with httpx.AsyncClient() as http:
-        with pytest.raises(EmitError) as exc_info:
-            await make_client(http).post_axiom(valid_axiom())
-    assert exc_info.value.status_code == 500
+async def test_post_axiom_serialises_emitted_at_as_iso_string() -> None:
+    client, mock_redis = make_client()
+    await client.post_axiom(valid_axiom())
+    fields = mock_redis.xadd.call_args.args[1]
+    assert fields["emitted_at"] == "2026-03-31T12:00:00+00:00"
+
+
+# ── Failure ───────────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_post_axiom_raises_emit_error_on_redis_failure() -> None:
+    client, _ = make_client(xadd_side_effect=ConnectionError("Redis unreachable"))
+    with pytest.raises(EmitError) as exc_info:
+        await client.post_axiom(valid_axiom())
+    assert AXIOMS_STREAM in exc_info.value.detail
 
 
 @pytest.mark.asyncio
-@respx.mock
-async def test_emit_error_carries_axiom_on_http_failure() -> None:
-    respx.post(AXIOMS_URL).mock(return_value=httpx.Response(503))
+async def test_emit_error_carries_axiom_on_failure() -> None:
+    client, _ = make_client(xadd_side_effect=ConnectionError("refused"))
     axiom = valid_axiom()
-    async with httpx.AsyncClient() as http:
-        with pytest.raises(EmitError) as exc_info:
-            await make_client(http).post_axiom(axiom)
+    with pytest.raises(EmitError) as exc_info:
+        await client.post_axiom(axiom)
     assert exc_info.value.axiom is axiom
 
 
-# ── Network failure ───────────────────────────────────────────────────────────
-
 @pytest.mark.asyncio
-@respx.mock
-async def test_post_axiom_raises_emit_error_on_connection_failure() -> None:
-    respx.post(AXIOMS_URL).mock(side_effect=httpx.ConnectError("refused"))
-    async with httpx.AsyncClient() as http:
-        with pytest.raises(EmitError) as exc_info:
-            await make_client(http).post_axiom(valid_axiom())
-    assert exc_info.value.status_code is None
-    assert "unreachable" in exc_info.value.detail
-
-
-@pytest.mark.asyncio
-@respx.mock
-async def test_network_error_wraps_original_exception() -> None:
-    original = httpx.ConnectError("timeout")
-    respx.post(AXIOMS_URL).mock(side_effect=original)
-    async with httpx.AsyncClient() as http:
-        with pytest.raises(EmitError) as exc_info:
-            await make_client(http).post_axiom(valid_axiom())
+async def test_emit_error_wraps_original_exception() -> None:
+    original = ConnectionError("timeout")
+    client, _ = make_client(xadd_side_effect=original)
+    with pytest.raises(EmitError) as exc_info:
+        await client.post_axiom(valid_axiom())
     assert exc_info.value.__cause__ is original

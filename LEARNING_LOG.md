@@ -4,6 +4,74 @@ Append-only. One entry per build phase. Format: Pattern → Anti-Pattern → Cha
 
 ---
 
+## ADR-0016 Migration — Redis Streams Delivery
+
+**Completed:** 2026-03-31
+**Files changed:** `pyproject.toml`, `config.py`, `.env.example`, `src/clients/sentinel.py`, `src/clients/sentinel_test.py`, `src/nodes/emitter.py`
+
+---
+
+### Patterns Used
+
+**At-Least-Once Delivery via Redis Streams**
+Replacing the HTTP POST to Sentinel-L7 with a Redis XADD to `synapse:axioms` decouples Synapse-L4 from Sentinel-L7's availability. XADD is non-blocking — it appends to the stream and returns as soon as the message is durably written. Sentinel-L7 reads via `XREADGROUP` with `XACK`/`XCLAIM` recovery, ensuring no Axiom is lost on worker failure.
+
+> **Q:** What delivery guarantee does HTTP POST provide, and how does Redis Streams improve on it?
+> **A:** HTTP POST is at-most-once by default — if Sentinel-L7 is down, the message is lost. Redis Streams with consumer groups provides at-least-once: the message lives in the stream until a consumer explicitly ACKs it. If a worker crashes before ACKing, `XCLAIM` recovery reassigns the message to another worker.
+
+---
+
+**Decoupled Producer**
+Synapse-L4 does not block on Sentinel-L7 processing time. XADD returns in microseconds regardless of how long Sentinel-L7 takes to classify the Axiom. Under high telemetry volume, this prevents back-pressure from the downstream consumer from stalling the upstream pipeline.
+
+> **Q:** Why is XADD non-blocking even under high Sentinel-L7 load?
+> **A:** XADD writes to the stream (an in-memory Redis data structure) and returns immediately. Sentinel-L7's processing speed is irrelevant to the producer — the stream acts as an elastic buffer. The producer and consumer are temporally decoupled.
+
+---
+
+**Stream-Per-Domain Separation**
+`synapse:axioms` is a dedicated stream, separate from Sentinel-L7's existing `transactions` stream. Axioms are dimensionally different from financial transactions — mixing them in a shared consumer pipeline would couple unrelated schemas and create fan-out ambiguity.
+
+> **Q:** Why not reuse Sentinel-L7's existing `transactions` stream?
+> **A:** `transactions` has its own consumer group, schema assumptions, and processing logic. Injecting Axioms there would require Sentinel-L7's transaction consumer to branch on message type — coupling two unrelated domains. A dedicated `synapse:axioms` stream gives each domain a clean consumer pipeline.
+
+---
+
+### Anti-Patterns Avoided
+
+**Synchronous HTTP Coupling**
+The original `sentinel.py` used `httpx.AsyncClient.post()` — still async, but still tightly coupled: Sentinel-L7 must be reachable, respond within timeout, and return 2xx for the emit to succeed. A Redis stream absorbs transient unavailability. The producer writes; the consumer reads when it's ready.
+
+> **Q:** Name the failure mode that HTTP coupling introduces that Redis Streams eliminates.
+> **A:** Sentinel-L7 deploys a new version and restarts mid-stream. With HTTP: the in-flight emit fails with `ConnectionRefused`; Synapse-L4 raises `EmitError`; the Axiom is lost (no retry budget in Phase 4). With Redis Streams: XADD succeeds before the restart; the Axiom sits in the stream; Sentinel-L7 reads it after restart. The producer is oblivious to the consumer's lifecycle.
+
+---
+
+### Challenges
+
+**`rediss://` vs `redis://` for TLS**
+`redis.asyncio.from_url()` requires `rediss://` (double-s) for TLS connections. Upstash's `.env.example` docs show separate `REDIS_HOST`/`REDIS_PORT`/`REDIS_PASSWORD` vars — these must be assembled into a single `rediss://:PASSWORD@HOST:PORT` URL for `aioredis`. The `redis://` scheme silently connects without TLS, which Upstash rejects.
+
+---
+
+**Config field rename blocks test collection**
+Renaming `sentinel_l7_url` (required) to `sentinel_redis_url` (required) + `sentinel_l7_url` (optional) causes `ValidationError` at import time if `.env` still has the old var name. pytest collection fails before any test runs — not with a test failure, but with a module import error. The fix is updating `.env` before running the suite, not after.
+
+---
+
+### Decisions
+
+**`EmitError` wraps all Redis exceptions**
+`SentinelClient.post_axiom` catches the broad `Exception` base class and re-raises as `EmitError` with `raise ... from exc`. This preserves exception chaining (`__cause__`) while presenting a stable error type to the emitter. The caller never needs to know whether the failure was `ConnectionError`, `TimeoutError`, or a Redis-specific exception.
+
+> **Q:** Why catch `Exception` broadly in `post_axiom` instead of specific Redis exception types?
+> **A:** `redis.asyncio` can raise `ConnectionError`, `TimeoutError`, `ResponseError`, and others depending on the failure mode. Catching each type explicitly creates a brittle allowlist — a new Redis exception type would silently propagate uncaught. Broad catch + typed re-raise gives the caller a stable contract while retaining the original for debugging via `__cause__`.
+
+**`sentinel_l7_url` retained as optional**
+The config field is kept (now optional) for health check use cases and to avoid breaking any existing tooling that reads it. It is not used in the current emit path.
+
+---
+
 ## Phase 7 — Logfire Observation Layer
 
 **Completed:** 2026-03-31

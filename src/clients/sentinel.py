@@ -1,62 +1,54 @@
 """
-HTTP client for delivering Axioms to Sentinel-L7.
+Redis Streams client for delivering Axioms to Sentinel-L7.
 
-Design Decision: HTTP POST over Redis XADD (for now)
-  ADR-0016 documents the open decision between a dedicated Redis stream
-  key and an HTTP endpoint. HTTP is implemented first because:
-  - SENTINEL_L7_URL is already the only required config for the downstream
-  - No Redis client dependency needed in Synapse-L4
-  - Simpler to test with respx than with a mock Redis connection
+Decision: Redis XADD to `synapse:axioms` stream (ADR-0016)
+  Axioms are written to a dedicated Redis stream key `synapse:axioms`,
+  separate from Sentinel-L7's `transactions` stream. This gives:
 
-  The trade-off: HTTP is synchronous and loses at-least-once delivery
-  guarantees. If Redis Streams are chosen in ADR-0016, this module is
-  the only file that changes.
+  - At-least-once delivery: Redis Streams consumer groups with XACK
+    ensure Axioms are not lost on Sentinel-L7 worker failure
+  - Decoupling: Synapse-L4 does not block on Sentinel-L7 processing —
+    XADD returns as soon as the message is appended to the stream
+  - Clean separation: Axioms are dimensionally different from financial
+    transactions and must not share the transactions consumer pipeline
 
-Endpoint: POST {SENTINEL_L7_URL}/api/axioms
-  This endpoint does not yet exist in Sentinel-L7 — it is the target
-  shape agreed upon via ADR-0016 (stub). See sentinel-l7/docs/adr/0016.
+  Sentinel-L7 consumes via `sentinel:watch-axioms` artisan command
+  with XCLAIM recovery (same pattern as `sentinel:reclaim`).
+
+Stream key: synapse:axioms
 """
 
 from __future__ import annotations
 
-import httpx
+import redis.asyncio as aioredis
 
 from src.models.axiom import Axiom, EmitError
 
+AXIOMS_STREAM = "synapse:axioms"
+
 
 class SentinelClient:
-    def __init__(
-        self,
-        base_url: str,
-        *,
-        http_client: httpx.AsyncClient | None = None,
-    ) -> None:
-        self._base_url = base_url.rstrip("/")
-        self._http_client = http_client or httpx.AsyncClient()
+    def __init__(self, redis_client: aioredis.Redis) -> None:  # type: ignore[type-arg]
+        self._redis = redis_client
 
     async def post_axiom(self, axiom: Axiom) -> None:
         """
-        POST a validated Axiom to Sentinel-L7's ingestion endpoint.
+        Append a validated Axiom to the `synapse:axioms` Redis stream.
 
         Raises:
-            EmitError: on non-2xx response or network failure,
-                       with status_code set if the server responded
+            EmitError: if the Redis connection fails or XADD returns an error
         """
+        fields = {
+            "status": axiom.status,
+            "metric_value": str(axiom.metric_value),
+            "anomaly_score": str(axiom.anomaly_score),
+            "source_id": axiom.source_id,
+            "emitted_at": axiom.emitted_at.isoformat(),
+        }
         try:
-            response = await self._http_client.post(
-                f"{self._base_url}/api/axioms",
-                json=axiom.model_dump(mode="json"),
-                timeout=10.0,
-            )
+            await self._redis.xadd(AXIOMS_STREAM, fields)  # type: ignore[arg-type]
         except Exception as exc:
             raise EmitError(
-                detail=f"Sentinel-L7 unreachable: {exc}",
+                detail=f"Failed to write Axiom to Redis stream '{AXIOMS_STREAM}': {exc}",
                 axiom=axiom,
             ) from exc
-
-        if response.status_code >= 400:
-            raise EmitError(
-                detail=f"Sentinel-L7 rejected Axiom: HTTP {response.status_code}",
-                axiom=axiom,
-                status_code=response.status_code,
-            )
