@@ -4,6 +4,63 @@ Append-only. One entry per build phase. Format: Pattern → Anti-Pattern → Cha
 
 ---
 
+## Phase 3 — Judge Pass + Business Rules
+
+**Completed:** 2026-03-31
+**Files:** `src/evaluation/rules.py`, `src/evaluation/rules_test.py`, `src/nodes/judge.py`, `src/nodes/judge_test.py`
+**Also:** fixed `extra="forbid"` on `AxiomDraft`
+
+---
+
+### Patterns Used
+
+**Validator-as-Judge**
+A deterministic code-level verification pass that runs *after* probabilistic LLM extraction. The Judge is not another LLM call — it enforces business rules that the LLM cannot be trusted to self-enforce. Rules are pure Python functions with no I/O, making them trivially unit-testable and independently auditable.
+
+> **Q:** Why is the Judge a separate stage rather than being embedded inside Instructor's retry loop via Pydantic validators?
+> **A:** Instructor retries when the LLM can't conform to the schema. Business rule violations are often not recoverable by retrying with the same input — they indicate ambiguous telemetry. Retrying wastes tokens. A separate Judge stage also produces a distinct error type (`JudgeRejection` vs. `ExtractionError`), making the failure reason unambiguous in logs and API responses.
+
+---
+
+**Rule Registry Pattern**
+Rules are registered in an ordered list (`_RULES`) in `judge.py`. Adding a new business rule requires only adding a function to `rules.py` and appending it to the list — the `judge()` function itself never changes. This is the *Open/Closed Principle*: the Judge is open to extension (new rules) but closed to modification.
+
+> **Q:** What does the rule registry pattern enable that a long `if/elif` chain inside `judge()` does not?
+> **A:** Each rule is independently testable in isolation. New rules can be added without touching `judge.py`. The registry is readable as a list — rule ordering is explicit and auditable. An `if/elif` chain grows without bound and mixes concerns (rule logic with orchestration logic).
+
+---
+
+**Fail-Fast Validation**
+The Judge runs rules in order and raises `JudgeRejection` on the first violation. It does not accumulate errors. This is the correct default for a pipeline: a draft with a non-finite `metric_value` and a status inconsistency is broken — there is no value in reporting both violations when the first alone is sufficient to reject it.
+
+> **Q:** When would you change fail-fast to collect-all violations?
+> **A:** When the caller needs to fix all errors in one round-trip — e.g. a form validation UX. In a machine-to-machine pipeline like this one, the caller (Synapse-L4 API) returns a 422 and the LLM re-runs. Knowing there are two violations rather than one doesn't change that outcome.
+
+---
+
+### Anti-Patterns Avoided
+
+**Silent Contradiction**
+An Axiom where `anomaly_score` is 0.91 but `status` is `"nominal"` would be internally contradictory. Sentinel-L7 would file a low-priority record for a near-certain anomaly. The `anomaly_score_status_consistency` rule makes this physically impossible to emit.
+
+**Accepting Sentinel Float Values**
+LLMs hallucinate `Infinity` or `NaN` for `metric_value` when the payload lacks a clear numeric signal. Pydantic accepts these as valid Python `float`s — they pass field validation. The `metric_value_finite` rule catches them before emission. Without it, Sentinel-L7 would receive a JSON payload with `"metric_value": Infinity`, which is not valid JSON and would cause a parse error downstream.
+
+---
+
+### Decisions
+
+**Rule ordering: `metric_value_finite` before `anomaly_score_status_consistency`**
+Structural sanity checks run before cross-field business logic. A draft with `metric_value=NaN` is structurally broken regardless of its status — there's no point evaluating the status rule. This also makes test assertions deterministic: when both rules would fire, the test can assert which rule name appears in the rejection.
+
+> **Q:** Why does `metric_value_finite` run before `anomaly_score_status_consistency`?
+> **A:** Structural validity before semantic consistency. You can't meaningfully ask "does this number's magnitude match the status?" if the number is NaN — the draft is already broken before business logic applies. Verifying a value is finite confirms it's a real measurement before checking what that measurement implies.
+
+**Thresholds as module-level constants, not env vars (for now)**
+`ANOMALY_CRITICAL_THRESHOLD = 0.8` and `ANOMALY_DEGRADED_THRESHOLD = 0.5` live in `rules.py`. Moving them to `config.py` as env vars enables operational tuning without code changes but adds cognitive overhead before the thresholds have been empirically validated. Deferred intentionally — see TODO in `rules.py`.
+
+---
+
 ## Phase 2 — AxiomDraft Model + Extractor Node
 
 **Completed:** 2026-03-31

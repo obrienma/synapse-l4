@@ -38,7 +38,12 @@ class AxiomDraft(BaseModel):
     Does not include source_id (comes from RawTelemetry) or emitted_at
     (set by the Emitter at delivery time). The Extractor returns this;
     the Judge validates it; the Emitter promotes it to a full Axiom.
+
+    extra="forbid" ensures the LLM cannot inject pipeline-owned fields
+    (source_id, emitted_at) even if Instructor passes them through.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     status: Literal["nominal", "degraded", "critical"]
     metric_value: float
