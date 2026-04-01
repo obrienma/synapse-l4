@@ -4,6 +4,7 @@ from typing import AsyncGenerator
 from fastapi import FastAPI
 
 from config import settings  # noqa: F401  — validates env on import
+from src.api.ingest import router as ingest_router
 
 
 @asynccontextmanager
@@ -14,6 +15,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 app = FastAPI(title="Synapse-L4", version="0.1.0", lifespan=lifespan)
+
+app.include_router(ingest_router)
 
 
 @app.get("/health")

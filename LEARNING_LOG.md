@@ -4,6 +4,54 @@ Append-only. One entry per build phase. Format: Pattern → Anti-Pattern → Cha
 
 ---
 
+## Phase 5 — FastAPI Ingest Route
+
+**Completed:** 2026-03-31
+**Files:** `src/api/ingest.py`, `src/api/ingest_test.py`, `main.py` (router wired)
+
+---
+
+### Patterns Used
+
+**Thin Route Handler**
+The `/ingest` route is a pure coordinator — it calls `extract → judge → emit` in sequence and maps typed pipeline exceptions to HTTP responses. No business logic lives in the route. This keeps each concern testable in isolation: route tests mock the pipeline functions entirely; pipeline tests never touch HTTP.
+
+> **Q:** Why mock `extract`, `judge`, and `emit` at the route level in tests rather than testing the full pipeline end-to-end?
+> **A:** Route tests verify the HTTP contract — correct status codes, correct error keys, correct response shape. If they tested the full pipeline, a failing LLM call would break a route test. Isolation means route tests are fast, deterministic, and don't require LLM credentials.
+
+---
+
+**Exception-to-HTTP Mapping**
+Each pipeline exception type maps to a specific HTTP status code and error envelope. `ExtractionError` and `JudgeRejection` are both client-recoverable (422); `EmitError` is a downstream failure (502). The error `code` field in the response body is machine-readable — callers can branch on `"judge_rejected"` without parsing the `detail` string.
+
+> **Q:** Why are `ExtractionError` and `JudgeRejection` both 422 rather than different codes?
+> **A:** Both mean the pipeline could not produce a valid Axiom from the given input. From the caller's perspective, the remedy is the same: inspect the error, fix the input, retry. A 422 signals "unprocessable" — accurate for both. Giving them different codes would suggest different retry strategies where none exist.
+
+---
+
+### Anti-Patterns Avoided
+
+**Fat Route Handler**
+Putting extraction logic, business rules, or delivery logic inside the route handler. This makes the route untestable without mocking infrastructure (LLM, HTTP clients) and makes the pipeline stages unreusable outside the HTTP context (e.g. from the WebSocket consumer).
+
+**Divide-by-Zero on Metrics**
+`avg_pipeline_ms` is `total_pipeline_ms // total_processed`. When `total_processed` is 0, this would raise `ZeroDivisionError`. The route guards with `if total > 0 else 0`. The test `test_metrics_avg_pipeline_ms_is_zero_when_no_requests_processed` verifies this on a fresh process.
+
+---
+
+### Decisions
+
+**`JSONResponse` over `raise HTTPException`**
+`HTTPException` in FastAPI wraps the detail in `{"detail": ...}`. Our error envelope uses `{"error": ..., "detail": ..., "rule": ...}` — a richer shape. Returning `JSONResponse` directly gives full control over the response body without fighting FastAPI's default exception serialization.
+
+> **Q:** Where is the structured error envelope actually consumed, and why does the shape matter?
+> **A:** By any client hitting `POST /ingest` — primarily Sentinel-L7. A client can branch on `body["error"] == "judge_rejected"` vs `"extraction_failed"` without parsing a nested string. `HTTPException` would wrap the body under `{"detail": {...}}`, forcing callers to unwrap one extra layer. The WebSocket consumer (Phase 6) bypasses HTTP entirely and calls the pipeline functions directly — it never sees these responses.
+
+**In-memory metrics counter with a TODO**
+A module-level `_metrics` dict is sufficient for Phase 5. It resets on process restart, is not thread-safe across multiple workers, and is not persisted. The TODO points to Logfire (Phase 7) where proper metrics instrumentation will replace it.
+
+---
+
 ## Phase 4 — Emitter + Sentinel-L7 Client
 
 **Completed:** 2026-03-31
