@@ -123,8 +123,8 @@ uv run pytest-watch              # Watch mode
 **Build order: top-down** (scaffold → models → nodes → API → clients → observation)
 
 **Not yet implemented** (in order):
-1. Project scaffold: `pyproject.toml`, `config.py`, `.env.example`
-2. `src/models/axiom.py` — shared Axiom schema
+1. ~~Project scaffold: `pyproject.toml`, `config.py`, `.env.example`~~ ✓
+2. ~~`src/models/axiom.py` — shared Axiom schema~~ ✓ (with `axiom_test.py`)
 3. `src/nodes/extractor.py` — Instructor extraction node
 4. `src/nodes/judge.py` + `src/evaluation/rules.py` — Judge pass
 5. `src/nodes/emitter.py` + `src/clients/sentinel.py` — emission to Sentinel-L7
@@ -147,7 +147,7 @@ uv run pytest-watch              # Watch mode
 - Update the Build Status section in this file after each completed step.
 
 ## ADR Files
-Create decision logs in `docs/adr/` following the format in existing ADRs and the guidance at https://martinfowler.com/bliki/ArchitectureDecisionRecord.html. Number sequentially (`0006-...`). Existing ADRs: FastAPI (0001), Instructor (0002), Frozen Axioms (0003), Judge stage (0004), uv (0005).
+Create decision logs in `docs/adr/` following the format in existing ADRs and the guidance at https://martinfowler.com/bliki/ArchitectureDecisionRecord.html. Number sequentially (`0006-...`). Existing ADRs: FastAPI (0001), Instructor (0002), Frozen Axioms (0003), Judge stage (0004), uv (0005), websockets client (0006).
 
 ---
 

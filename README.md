@@ -7,7 +7,7 @@
 ## Role in the Ecosystem
 
 ```
-┌─────────────────────┐     raw telemetry      ┌─────────────────────┐     validated Axioms    ┌─────────────────────┐
+┌─────────────────────┐     raw telemetry       ┌─────────────────────┐     validated Axioms    ┌─────────────────────┐
 │   EventHorizon      │ ──────────────────────► │    Synapse-L4       │ ──────────────────────► │    Sentinel-L7      │
 │  "Nervous System"   │                         │      "Brain"        │                         │   "Gatekeeper"      │
 │  TS · Fastify       │                         │  Python · FastAPI   │                         │  Laravel · Redis    │

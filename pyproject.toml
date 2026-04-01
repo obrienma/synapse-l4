@@ -1,0 +1,39 @@
+[project]
+name = "synapse-l4"
+version = "0.1.0"
+description = "AI Logic & Evaluation Sidecar — validates LLM outputs into typed Axioms"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi[standard]>=0.115",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.7",
+    "instructor>=1.7",
+    "openai>=1.58",
+    "llama-index-core>=0.12",
+    "logfire>=3.0",
+    "httpx>=0.28",
+    "websockets>=13",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "respx>=0.21",
+    "mypy>=1.13",
+    "pytest-watch>=4.2",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["src"]
+python_files = ["*_test.py"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["pydantic.mypy"]
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
