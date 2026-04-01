@@ -17,6 +17,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import logfire
+
 from config import settings
 from src.clients.sentinel import SentinelClient
 from src.models.axiom import Axiom, AxiomDraft, EmitError, RawTelemetry
@@ -56,6 +58,7 @@ async def emit(
     )
 
     _client = client or _default_client()
-    await _client.post_axiom(axiom)  # raises EmitError on failure
+    with logfire.span("emit", source_id=axiom.source_id, status=axiom.status):
+        await _client.post_axiom(axiom)  # raises EmitError on failure
 
     return axiom

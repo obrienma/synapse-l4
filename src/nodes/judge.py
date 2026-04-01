@@ -18,6 +18,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+import logfire
+
 from src.evaluation.rules import (
     rule_anomaly_score_status_consistency,
     rule_metric_value_finite,
@@ -46,6 +48,7 @@ def judge(draft: AxiomDraft) -> AxiomDraft:
     Raises:
         JudgeRejection: on the first rule violation, with rule name and detail
     """
-    for rule in _RULES:
-        rule(draft)  # raises JudgeRejection on violation
+    with logfire.span("judge", status=draft.status, anomaly_score=draft.anomaly_score):
+        for rule in _RULES:
+            rule(draft)  # raises JudgeRejection on violation
     return draft

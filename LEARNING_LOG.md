@@ -4,6 +4,49 @@ Append-only. One entry per build phase. Format: Pattern → Anti-Pattern → Cha
 
 ---
 
+## Phase 7 — Logfire Observation Layer
+
+**Completed:** 2026-03-31
+**Files:** `src/observation/instrumentation.py`, `src/observation/instrumentation_test.py`
+**Updated:** `src/nodes/extractor.py`, `src/nodes/judge.py`, `src/nodes/emitter.py`, `main.py`
+
+---
+
+### Patterns Used
+
+**Additive Observability**
+Instrumentation is layered on top of the pipeline — it never changes correctness. Logfire spans wrap each stage but do not alter return values, exception behaviour, or control flow. If Logfire is misconfigured or unavailable, the pipeline continues unaffected.
+
+> **Q:** What does "additive observability" mean in practice for this pipeline?
+> **A:** Each `logfire.span()` call wraps existing code without modifying it. If Logfire's SDK raises an unexpected error internally, it is caught by Logfire itself — it does not propagate to the pipeline. Observability is a side effect of the pipeline, not a dependency of it.
+
+---
+
+**No-Op Mode for Missing Config**
+When `LOGFIRE_TOKEN` is absent, `configure_logfire()` calls `logfire.configure(send_to_logfire=False)`. Spans are created in-process but never exported. The full test suite runs without a Logfire token — tests verify that spans don't crash the pipeline, not that spans have specific attributes.
+
+> **Q:** Why is verifying span attribute structure left to the Logfire UI rather than automated tests?
+> **A:** Span structure assertions would couple tests to Logfire's internal representation. If Logfire changes how attributes are stored or named, tests would break for non-functional reasons. What matters is that the pipeline behaves correctly — span content is an operational concern verified manually.
+
+---
+
+### Anti-Patterns Avoided
+
+**Observability as a Hard Dependency**
+If `configure_logfire()` raised when `LOGFIRE_TOKEN` was absent, a missing env var would prevent the service from starting. Observability must never be a gating dependency — the pipeline should run in a degraded-observability mode before it fails to start.
+
+---
+
+### Decisions
+
+**Spans at stage boundaries, not inside rules**
+`logfire.span("judge", ...)` wraps the full Judge pass, not individual rules. Adding a span per rule would produce noisy traces for a synchronous operation that completes in microseconds. Stage-level spans give enough resolution to identify which phase of the pipeline is slow or failing.
+
+**`instrument_fastapi` and `instrument_httpx` called in lifespan**
+Both need the `app` instance and a configured Logfire client — neither is available at import time. Lifespan is the correct place for startup instrumentation that depends on runtime state.
+
+---
+
 ## Phase 6 — EventHorizon WebSocket Consumer
 
 **Completed:** 2026-03-31

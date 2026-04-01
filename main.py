@@ -8,13 +8,17 @@ from fastapi import FastAPI
 from config import settings
 from src.api.ingest import router as ingest_router
 from src.clients.eventhorizon import run as run_eventhorizon_consumer
+from src.observation.instrumentation import configure_logfire, instrument_fastapi, instrument_httpx
 
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    # TODO: initialise Logfire instrumentation (Phase 7)
+    configure_logfire()
+    instrument_fastapi(app)
+    instrument_httpx()
+
     consumer_task: asyncio.Task[None] | None = None
     if settings.eventhorizon_ws_url:
         consumer_task = asyncio.create_task(

@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 
 import instructor
+import logfire
 from openai import AsyncOpenAI
 
 from config import settings
@@ -62,26 +63,27 @@ async def extract(
     """
     _client = client or _default_client()
 
-    try:
-        return await _client.chat.completions.create(  # type: ignore[return-value]
-            model=settings.llm_model,
-            response_model=AxiomDraft,
-            max_retries=settings.instructor_max_retries,
-            messages=[
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {
-                    "role": "user",
-                    "content": (
-                        f"Source ID: {telemetry.source_id}\n\n"
-                        f"Payload:\n{json.dumps(telemetry.payload, indent=2)}"
-                    ),
-                },
-            ],
-        )
-    except Exception as exc:
-        # TODO: narrow to instructor.exceptions.InstructorRetryException and
-        # openai.APIConnectionError for finer-grained error reporting
-        raise ExtractionError(
-            detail=f"LLM did not produce a valid AxiomDraft: {exc}",
-            raw_payload=telemetry.payload,
-        ) from exc
+    with logfire.span("extract", source_id=telemetry.source_id, llm_model=settings.llm_model):
+        try:
+            return await _client.chat.completions.create(  # type: ignore[return-value]
+                model=settings.llm_model,
+                response_model=AxiomDraft,
+                max_retries=settings.instructor_max_retries,
+                messages=[
+                    {"role": "system", "content": _SYSTEM_PROMPT},
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Source ID: {telemetry.source_id}\n\n"
+                            f"Payload:\n{json.dumps(telemetry.payload, indent=2)}"
+                        ),
+                    },
+                ],
+            )
+        except Exception as exc:
+            # TODO: narrow to instructor.exceptions.InstructorRetryException and
+            # openai.APIConnectionError for finer-grained error reporting
+            raise ExtractionError(
+                detail=f"LLM did not produce a valid AxiomDraft: {exc}",
+                raw_payload=telemetry.payload,
+            ) from exc

@@ -1,3 +1,4 @@
+import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -48,7 +49,7 @@ def test_event_to_telemetry_uses_unknown_when_no_id() -> None:
 def test_event_to_telemetry_passes_full_data_as_payload() -> None:
     data = {"raw": {"id": "s1"}, "value": 99}
     telemetry = _event_to_telemetry(data)
-    assert telemetry.payload is data
+    assert telemetry.payload == data
 
 
 # ── _handle_message: routing ──────────────────────────────────────────────────
@@ -125,10 +126,14 @@ async def test_consume_processes_multiple_messages() -> None:
     messages = [event_message(EVENT_DATA), stats_message(), event_message(EVENT_DATA)]
     pipeline = AsyncMock()
 
+    async def async_messages():
+        for m in messages:
+            yield m
+
     mock_ws = MagicMock()
     mock_ws.__aenter__ = AsyncMock(return_value=mock_ws)
     mock_ws.__aexit__ = AsyncMock(return_value=False)
-    mock_ws.__aiter__ = MagicMock(return_value=iter(messages))
+    mock_ws.__aiter__ = MagicMock(return_value=async_messages())
 
     with patch("src.clients.eventhorizon.websockets.connect", return_value=mock_ws):
         await _consume("ws://test", pipeline_fn=pipeline)

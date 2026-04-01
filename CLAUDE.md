@@ -130,7 +130,7 @@ uv run pytest-watch              # Watch mode
 5. ~~`src/nodes/emitter.py` + `src/clients/sentinel.py` — emission to Sentinel-L7~~ ✓ (with `emitter_test.py`, `sentinel_test.py`)
 6. ~~`src/api/ingest.py` + `src/main.py` — FastAPI ingestion endpoint~~ ✓ (with `ingest_test.py`)
 7. ~~`src/clients/eventhorizon.py` — WebSocket consumer~~ ✓ (with `eventhorizon_test.py`)
-8. `src/observation/` — Logfire instrumentation
+8. ~~`src/observation/` — Logfire instrumentation~~ ✓ (with `instrumentation_test.py`)
 9. Tests per layer
 
 ---
