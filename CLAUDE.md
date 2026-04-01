@@ -124,8 +124,8 @@ uv run pytest-watch              # Watch mode
 
 **Not yet implemented** (in order):
 1. ~~Project scaffold: `pyproject.toml`, `config.py`, `.env.example`~~ ✓
-2. ~~`src/models/axiom.py` — shared Axiom schema~~ ✓ (with `axiom_test.py`)
-3. `src/nodes/extractor.py` — Instructor extraction node
+2. ~~`src/models/axiom.py` — shared Axiom schema~~ ✓ (with `axiom_test.py`; added `AxiomDraft`)
+3. ~~`src/nodes/extractor.py` — Instructor extraction node~~ ✓ (with `extractor_test.py`)
 4. `src/nodes/judge.py` + `src/evaluation/rules.py` — Judge pass
 5. `src/nodes/emitter.py` + `src/clients/sentinel.py` — emission to Sentinel-L7
 6. `src/api/ingest.py` + `src/main.py` — FastAPI ingestion endpoint

@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 import pytest
 from pydantic import ValidationError
 
-from src.models.axiom import Axiom, ExtractionError, JudgeRejection, RawTelemetry
+from src.models.axiom import Axiom, AxiomDraft, ExtractionError, JudgeRejection, RawTelemetry
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -103,17 +103,41 @@ def test_raw_telemetry_rejects_missing_source_id() -> None:
         RawTelemetry(payload={"x": 1})  # type: ignore[call-arg]
 
 
+# ── AxiomDraft ────────────────────────────────────────────────────────────────
+
+def test_axiom_draft_constructs_with_valid_fields() -> None:
+    draft = AxiomDraft(status="degraded", metric_value=75.0, anomaly_score=0.6)
+    assert draft.status == "degraded"
+    assert draft.anomaly_score == 0.6
+
+
+def test_axiom_draft_rejects_anomaly_score_out_of_range() -> None:
+    with pytest.raises(ValidationError):
+        AxiomDraft(status="nominal", metric_value=1.0, anomaly_score=1.5)
+
+
+def test_axiom_draft_has_no_source_id_or_emitted_at() -> None:
+    # AxiomDraft must not accept pipeline-owned fields — they belong to the Emitter
+    with pytest.raises(ValidationError):
+        AxiomDraft(  # type: ignore[call-arg]
+            status="nominal",
+            metric_value=1.0,
+            anomaly_score=0.1,
+            source_id="should-not-exist",
+        )
+
+
 # ── JudgeRejection ────────────────────────────────────────────────────────────
 
 def test_judge_rejection_carries_rule_and_detail() -> None:
-    candidate = valid_axiom()
+    draft = AxiomDraft(status="nominal", metric_value=42.0, anomaly_score=0.91)
     exc = JudgeRejection(
         rule="anomaly_score_status_consistency",
         detail="anomaly_score 0.91 requires status 'critical'",
-        axiom_candidate=candidate,
+        draft=draft,
     )
     assert exc.rule == "anomaly_score_status_consistency"
-    assert exc.axiom_candidate is candidate
+    assert exc.draft is draft
     assert "anomaly_score" in str(exc)
 
 

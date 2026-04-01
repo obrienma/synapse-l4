@@ -31,6 +31,20 @@ class Axiom(BaseModel):
     emitted_at: datetime
 
 
+class AxiomDraft(BaseModel):
+    """
+    LLM-extracted fields only — the three values the model fills in.
+
+    Does not include source_id (comes from RawTelemetry) or emitted_at
+    (set by the Emitter at delivery time). The Extractor returns this;
+    the Judge validates it; the Emitter promotes it to a full Axiom.
+    """
+
+    status: Literal["nominal", "degraded", "critical"]
+    metric_value: float
+    anomaly_score: Annotated[float, Field(ge=0.0, le=1.0)]
+
+
 class RawTelemetry(BaseModel):
     """Loosely-typed input received at the Consume stage."""
 
@@ -46,11 +60,11 @@ class JudgeRejection(Exception):
     enough detail for the caller to understand what failed and why.
     """
 
-    def __init__(self, rule: str, detail: str, axiom_candidate: Axiom) -> None:
+    def __init__(self, rule: str, detail: str, draft: "AxiomDraft") -> None:
         super().__init__(detail)
         self.rule = rule
         self.detail = detail
-        self.axiom_candidate = axiom_candidate
+        self.draft = draft
 
 
 class ExtractionError(Exception):

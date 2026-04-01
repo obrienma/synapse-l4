@@ -4,6 +4,71 @@ Append-only. One entry per build phase. Format: Pattern → Anti-Pattern → Cha
 
 ---
 
+## Phase 2 — AxiomDraft Model + Extractor Node
+
+**Completed:** 2026-03-31
+**Files:** `src/models/axiom.py` (added `AxiomDraft`), `src/nodes/extractor.py`, `src/nodes/extractor_test.py`
+
+---
+
+### Patterns Used
+
+**Bounded LLM Responsibility**
+The LLM only fills in what it can uniquely determine from the payload — `status`, `metric_value`, `anomaly_score`. Pipeline-owned fields (`source_id`, `emitted_at`) are supplied from authoritative sources: `RawTelemetry` and the system clock at emission time. `AxiomDraft` encodes this boundary in the type system — the LLM literally cannot set fields it doesn't own.
+
+> **Q:** Why does `AxiomDraft` not include `source_id` or `emitted_at`?
+> **A:** `source_id` is already known with certainty from `RawTelemetry` — asking the LLM to echo it back introduces a trust gap. `emitted_at` doesn't exist yet at extraction time; it's stamped at delivery. Letting the LLM set either would mean trusting a probabilistic model with data the pipeline already holds deterministically.
+
+---
+
+**Injectable Client for Testability**
+The extractor's `client` parameter defaults to `None` and builds the real Instructor client lazily on first call. Tests pass a mock directly — no `unittest.mock.patch` at the module level, no import-time side effects. This is the *Dependency Injection* pattern applied to async clients.
+
+> **Q:** Why is the Instructor client constructed lazily (`_default_client()`) rather than at module import time?
+> **A:** Module-level client construction runs `OPENAI_API_KEY` validation at import. Any test that imports the extractor would require a valid API key in the environment, even tests that never make a real LLM call. Lazy construction keeps tests self-contained and fast.
+
+---
+
+**Exception Chaining (`raise ... from exc`)**
+`ExtractionError` is raised with `from exc`, preserving the original exception as `__cause__`. This means the full traceback — including the underlying `APIConnectionError` or `InstructorRetryException` — is visible in logs even though callers only handle `ExtractionError`. The stage boundary is clean outward; the debug trail is complete inward.
+
+> **Q:** What does `raise ExtractionError(...) from exc` do that `raise ExtractionError(...)` alone does not?
+> **A:** It sets `__cause__` on the new exception, explicitly linking it to the original. Python's traceback renderer prints both. Without it, the original exception is lost — you see `ExtractionError` in logs but not the underlying `APIConnectionError` that caused it.
+
+---
+
+### Anti-Patterns Avoided
+
+**Prompt Engineering for Output Format**
+Instructing the LLM to "return JSON matching this schema" with no enforcement mechanism — no retry, no type guarantee, no recovery path. Instructor replaces this entirely by using function-calling at the protocol level. If the model returns a non-conforming response, Instructor retries with the validation error as feedback. The schema is the source of truth, not the prompt.
+
+---
+
+**Leaking Third-Party Exceptions Across Stage Boundaries**
+Without the `try/except` wrapper, a network timeout from `httpx` or an exhausted retry from `instructor` would propagate raw through the pipeline. The API layer would need to know about `openai.APIConnectionError` to return a sensible 503 — a direct coupling between the HTTP layer and the LLM client library. Wrapping in `ExtractionError` keeps each stage's error vocabulary self-contained.
+
+---
+
+### Challenges
+
+**`AxiomDraft` extra fields rejection**
+Pydantic v2 models reject extra fields by default only if `model_config = ConfigDict(extra="forbid")` is set. Without it, `AxiomDraft(source_id="x", ...)` silently ignores the extra field rather than raising `ValidationError`. The test `test_axiom_draft_has_no_source_id_or_emitted_at` catches this — but the fix (adding `extra="forbid"`) is a TODO for the implementation phase.
+
+> **Q:** What happens if you pass `source_id` to `AxiomDraft` without `extra="forbid"`?
+> **A:** Pydantic v2 silently ignores the unknown field by default. The model constructs successfully — the test would pass for the wrong reason. `extra="forbid"` makes the model actively reject unknown fields with a `ValidationError`.
+
+---
+
+### Decisions
+
+**`AxiomDraft` rather than a partial `Axiom`**
+An alternative would be making `source_id` and `emitted_at` optional on `Axiom` and treating a partially-populated instance as a draft. This was rejected because it allows a partially-constructed `Axiom` to be passed to the Emitter without ever being promoted — the type system can't distinguish "draft Axiom" from "complete Axiom". Separate types make invalid pipeline states unrepresentable.
+
+> **Q:** Why not just make `source_id` and `emitted_at` optional on `Axiom` instead of creating `AxiomDraft`?
+> **A:** Optional fields mean the Emitter could accidentally emit an `Axiom` with `source_id=None`. The type system cannot tell the difference between "draft Axiom awaiting promotion" and "complete Axiom ready for emission". Separate types make the pipeline stage contract explicit — `AxiomDraft` in, `Axiom` out.
+
+---
+
 ## Phase 1 — Project Scaffold + Axiom Contract
 
 **Completed:** 2026-03-31
