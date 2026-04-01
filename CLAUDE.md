@@ -116,6 +116,34 @@ uv run pytest-watch              # Watch mode
 
 ---
 
+## Known Challenges & Gotchas
+
+Lessons burned in during build — check these before touching the relevant areas.
+
+### Extraction / LLM Cost
+- **Obligatory LLM Invocation**: Every payload going through the LLM regardless of structure exhausts token quota fast. `_try_direct_extraction()` in `extractor.py` provides a deterministic fast path — structured payloads never reach the LLM. Don't remove it.
+- **`instructor_max_retries` multiplier**: Each `extract()` call on an unstructured payload costs up to `1 + max_retries` LLM calls. At the default of 3, one struggling message burns 4 calls. Keep `INSTRUCTOR_MAX_RETRIES=1` in `.env` for development.
+- **`_try_direct_extraction` must catch both `KeyError` and `ValidationError`**: `KeyError` = missing field; `ValidationError` = present but invalid (e.g. `status="unknown"`, `anomaly_score=2.5`). Catching only `KeyError` lets an invalid-but-present payload bypass the LLM and produce a corrupt `AxiomDraft`.
+
+### Async / WebSocket
+- **`asyncio.CancelledError` is `BaseException`, not `Exception`** (Python 3.8+): It falls through `except Exception` naturally. The explicit `except asyncio.CancelledError: raise` in `eventhorizon.py` is intentional documentation — do not collapse it into the generic `except Exception` block.
+- **Testing the reconnect loop**: `run()` loops forever. Tests must cancel the task or use `asyncio.timeout()` to stop it — they cannot just call `run()` and assert.
+
+### Pydantic / Models
+- **`frozen=True` blocks `model_copy(update={})`**: Frozen models raise `ValidationError` on `model_copy`. Construct `Axiom` from scratch in the Emitter; don't try to copy-and-update a draft.
+- **`extra="forbid"` is required on `AxiomDraft`**: Without it, passing `source_id` to `AxiomDraft()` silently succeeds. The test `test_axiom_draft_has_no_source_id_or_emitted_at` relies on `extra="forbid"` being set.
+
+### Testing
+- **Module-level `_metrics` dict in `ingest.py` persists across tests**: `TestClient` runs in-process. Tests that assert exact counter values will be order-dependent. Current tests avoid this by only asserting shape, not values.
+- **`respx` mock must be entered before `httpx.AsyncClient` construction**: `respx` patches at the transport level. A client constructed outside the `respx.mock` context makes real HTTP calls.
+- **`LogfireNotConfiguredWarning` in tests**: Any test that calls pipeline code without first calling `logfire.configure()` emits this warning. It is suppressed via `filterwarnings` in `pyproject.toml` — don't remove that config.
+
+### Dependencies
+- **`rediss://` (double-s) required for Upstash TLS**: `redis://` connects without TLS and Upstash rejects it silently. All Redis URLs must use `rediss://`.
+- **`instructor` deprecation warning via Logfire**: Logfire's instrumentation imports from `instructor.client` (deprecated in v2). The warning is transitive — it is not caused by application code and cannot be fixed here.
+
+---
+
 ## Current Build Status
 
 **Completed:** CLAUDE.md, .github/copilot-instructions.md, README.md, docs/ARCHITECTURE.md, docs/API.md, docs/DEV_GETTING_STARTED.md, docs/TESTING.md, docs/adr/ (0001–0005)
@@ -142,7 +170,9 @@ uv run pytest-watch              # Watch mode
 - **Don't add features beyond what's asked.** No extra error handling, no extra abstractions, no unrequested refactors.
 - **No doc files** unless explicitly requested. Update `CLAUDE.md` Build Status section after each completed step.
 - **Tests are written alongside each phase — not after.** A phase is not complete until its colocated tests pass. See [docs/TESTING.md](docs/TESTING.md) for per-phase test strategy.
+- **`LEARNING_LOG.md` is referred to as `ll`** in conversation — treat "ll" as shorthand for `LEARNING_LOG.md`.
 - **Maintain `LEARNING_LOG.md`**: Writing to `LEARNING_LOG.md` is a required step at the end of every phase — not optional. A phase is not complete until the log entry is written. Append entries for every pattern used, anti-pattern avoided, challenge encountered, or design decision made. Use the established entry format (Pattern / Anti-Pattern / Challenge / Decision sections with **Q:**/**A:** flashcard blocks).
+- **Challenges are mandatory in every log entry**: Every phase entry must include a `### Challenges` section. If no challenge was encountered, state that explicitly — do not omit the section. Challenges include: unexpected library behaviour, error messages that required diagnosis, gotchas discovered during testing, version-specific quirks, and any moment where the first approach didn't work. Retroactively add challenges to existing entries if a new phase reveals a prior gotcha.
 - All Pydantic models use explicit `model_config` — never rely on global config defaults.
 - Update the Build Status section in this file after each completed step.
 

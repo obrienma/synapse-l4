@@ -4,6 +4,55 @@ Append-only. One entry per build phase. Format: Pattern → Anti-Pattern → Cha
 
 ---
 
+## Optimization Pass — Hybrid Extraction Fast Path
+
+**Completed:** 2026-04-01
+**Files changed:** `src/nodes/extractor.py`, `src/nodes/extractor_test.py`, `.env`
+
+---
+
+### Pattern Used
+
+**Hybrid Extraction**
+Deterministic extraction first, probabilistic (LLM) extraction as fallback only when the payload is unstructured. `_try_direct_extraction()` attempts to map `status`, `metric_value`, and `anomaly_score` directly from the payload dict. If that succeeds, the LLM is never called. If any required field is missing or fails Pydantic validation, the extractor falls through to Instructor.
+
+> **Q:** Why is the deterministic path tried first rather than the LLM?
+> **A:** EventHorizon is a typed TypeScript system — its events often already carry structured fields. Running the LLM on structured payloads wastes quota, adds latency, and introduces unnecessary probabilistic uncertainty. The LLM is only needed for genuinely unstructured text. Deterministic first, probabilistic as fallback is the correct cost ordering.
+
+---
+
+### Anti-Pattern Avoided
+
+**Obligatory LLM Invocation**
+Using the LLM as the only extraction path even when cheaper, faster, deterministic extraction is possible. The failure mode: EventHorizon sends a high-frequency stream of typed events; every event burns an LLM call; at `instructor_max_retries=3`, each struggling extraction burns 4 calls; API token quota is exhausted before manual testing is possible.
+
+> **Q:** What is the compounding failure mode of `instructor_max_retries=3` under high telemetry volume?
+> **A:** Each call to `extract()` on an unstructured payload can make up to `1 + max_retries` LLM API calls — 4 at the default. If the model consistently struggles with a payload shape, every event multiplies token consumption by 4. Combined with a high-frequency WebSocket stream, this exhausts quota orders of magnitude faster than single-call-per-event reasoning would suggest.
+
+---
+
+### Challenges
+
+**Token exhaustion before functional testing**
+Real-world impact of Obligatory LLM Invocation: the service ran correctly in tests (all mocked) but was never manually tested end-to-end before the OpenAI quota was hit. The mocked tests gave false confidence about operational cost. The lesson: token cost is a deployment concern, not a test concern — it only surfaces under real traffic.
+
+---
+
+**`_try_direct_extraction` must catch both `KeyError` and `ValidationError`**
+`KeyError` guards against a missing field (`payload["status"]` raises when the key doesn't exist). `ValidationError` guards against a field that's present but invalid — e.g., `status="unknown"` (not in the `Literal`) or `anomaly_score=2.5` (exceeds `ge=0.0, le=1.0`). Catching only `KeyError` would let a structurally-present but semantically-invalid payload short-circuit into the fast path and produce a corrupted `AxiomDraft` without going through the LLM for recovery.
+
+> **Q:** What payload would pass `KeyError` protection but fail without `ValidationError` protection?
+> **A:** `{"status": "unknown", "metric_value": 1.0, "anomaly_score": 0.5}` — all three keys are present (no `KeyError`), but `"unknown"` is not a valid `Literal["nominal", "degraded", "critical"]`, so Pydantic raises `ValidationError`. Without the `ValidationError` catch, `_try_direct_extraction` would propagate a crash instead of returning `None` and falling through to the LLM.
+
+---
+
+### Decision
+
+**`INSTRUCTOR_MAX_RETRIES=1` in `.env` for development**
+Dropped from 3 to 1 — max 2 LLM calls per unstructured payload instead of 4. The intent of retries is recovery from transient malformed output, not grinding through fundamentally ambiguous payloads. For development, fail fast (2 calls) preserves quota for actual end-to-end testing. The default of 3 in `config.py` is retained for production where quota is less constrained.
+
+---
+
 ## ADR-0016 Migration — Redis Streams Delivery
 
 **Completed:** 2026-03-31
@@ -115,6 +164,18 @@ Both need the `app` instance and a configured Logfire client — neither is avai
 
 ---
 
+### Challenges
+
+**`LogfireNotConfiguredWarning` bleeds into test output**
+When any test exercises a code path containing `logfire.span()` or `logfire.info()` without first calling `logfire.configure()`, Logfire emits a `LogfireNotConfiguredWarning`. Tests that call pipeline functions directly (bypassing the lifespan which calls `configure_logfire()`) will always trigger this. The warning is harmless but noisy. Fix: set `LOGFIRE_IGNORE_NO_CONFIG=1` in the test environment, or call `logfire.configure(send_to_logfire=False)` in a session-scoped fixture. The current test suite suppresses it via pyproject.toml's `filterwarnings` configuration.
+
+---
+
+**`instructor` deprecation warning surfacing through Logfire's instrumentation**
+`logfire`'s `instrument_openai()` internally imports from `instructor.client`, which is deprecated in instructor v2. The warning (`"Importing from 'instructor.client' is deprecated..."`) appears during test collection even though the project uses Instructor correctly. This is a transitive dependency issue — the fix is in the Logfire/Instructor version pairing, not in application code.
+
+---
+
 ## Phase 6 — EventHorizon WebSocket Consumer
 
 **Completed:** 2026-03-31
@@ -168,6 +229,21 @@ The exact EventHorizon `StoredEvent` shape isn't confirmed yet — the mapping u
 
 ---
 
+### Challenges
+
+**`asyncio.CancelledError` is `BaseException`, not `Exception` in Python 3.8+**
+Before Python 3.8, `CancelledError` was a subclass of `Exception`. From 3.8 onward it is a subclass of `BaseException` directly. This means a broad `except Exception` in the reconnection loop will NOT catch `CancelledError` — which is exactly correct here, but it's counterintuitive for Python developers with pre-3.8 habits. If you accidentally wrote `except BaseException`, the consumer would swallow cancellation signals and refuse to shut down gracefully. The current `except asyncio.CancelledError: raise` is explicit — it documents the intent, not just the behavior.
+
+> **Q:** Why would `except Exception` in the reconnect loop accidentally give you graceful shutdown for free in Python 3.12?
+> **A:** It wouldn't — that's the point. `CancelledError` is `BaseException`, so it falls through `except Exception` and propagates up naturally. The explicit `except asyncio.CancelledError: raise` is documentation of intent: we know this signal exists, we're choosing to let it through, and we're not relying on accident of inheritance.
+
+---
+
+**Testing a reconnecting consumer without real WebSocket infrastructure**
+`run()` loops forever. Testing reconnection logic requires patching `_consume` itself to raise `ConnectionClosed` on the first call and succeed (or raise `CancelledError`) on the second. Using `asyncio.timeout()` or cancelling the task from the test is necessary to stop the loop. Without this structure, the test either runs forever or never exercises the reconnect path.
+
+---
+
 ## Phase 5 — FastAPI Ingest Route
 
 **Completed:** 2026-03-31
@@ -213,6 +289,18 @@ Putting extraction logic, business rules, or delivery logic inside the route han
 
 **In-memory metrics counter with a TODO**
 A module-level `_metrics` dict is sufficient for Phase 5. It resets on process restart, is not thread-safe across multiple workers, and is not persisted. The TODO points to Logfire (Phase 7) where proper metrics instrumentation will replace it.
+
+---
+
+### Challenges
+
+**Module-level `_metrics` dict persists across tests in the same process**
+`TestClient` runs routes synchronously in the same process. The `_metrics` dict is module-level state that survives between test functions. A test that calls `POST /ingest` and then checks `GET /metrics` may see counts from a previous test. The current test suite avoids this by testing metrics shape only (`avg_pipeline_ms >= 0`), not specific counter values. If exact counter assertions are ever needed, a test fixture would need to reset `_metrics` between tests via `importlib.reload` or direct mutation.
+
+---
+
+**`JSONResponse` vs `raise HTTPException` output shape mismatch discovered late**
+The structured error envelope (`{"error": ..., "detail": ..., "rule": ...}`) only becomes a problem if `HTTPException` is used anywhere in the route — FastAPI wraps `HTTPException.detail` in `{"detail": ...}`. Tests that assert on `body["error"]` would fail silently if a future contributor adds `raise HTTPException(422, detail={...})` expecting the same shape. The test suite asserts on specific keys (`"error"`, `"rule"`, `"axiom_candidate"`) rather than just status codes, which catches this regression.
 
 ---
 
@@ -266,6 +354,18 @@ ADR-0016 in Sentinel-L7 documents the open decision. HTTP is implemented first b
 
 **`EmitError` carries the Axiom**
 The failed Axiom is attached to `EmitError` so the API layer can include it in the 502 response body. Callers that want to retry have the full Axiom available without reconstructing it. This mirrors the pattern established by `JudgeRejection` (carries draft) and `ExtractionError` (carries raw payload).
+
+---
+
+### Challenges
+
+**`respx` mock must be activated before the `httpx.AsyncClient` is created**
+`respx.mock` patches at the transport level — it intercepts requests made through `httpx.AsyncClient`. If the client is constructed before `respx.mock` is entered (e.g., as a class-level fixture), the mock has no effect and the test makes a real HTTP call. All `SentinelClient` tests that use `respx` must construct the client inside the `respx.mock` context.
+
+---
+
+**`frozen=True` Axiom cannot be constructed with `model_copy()`**
+Pydantic's `model_copy(update={...})` is blocked on frozen models — it raises `ValidationError`. The Emitter constructs `Axiom` from scratch (merging `AxiomDraft` fields with pipeline-owned fields) rather than copying and updating. This is correct behaviour, but it means there is no "update this Axiom field" escape hatch — intentional, since mutation after validation is the exact anti-pattern `frozen=True` prevents.
 
 ---
 

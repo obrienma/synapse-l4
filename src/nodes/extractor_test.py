@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from src.models.axiom import AxiomDraft, ExtractionError, RawTelemetry
-from src.nodes.extractor import extract
+from src.nodes.extractor import _try_direct_extraction, extract
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -28,6 +28,42 @@ def make_mock_client(return_value: object | None = None, side_effect: Exception 
         mock_create.return_value = return_value
     client.chat.completions.create = mock_create
     return client
+
+
+# ── Fast path (deterministic extraction) ─────────────────────────────────────
+
+def test_try_direct_extraction_returns_axiom_draft_for_structured_payload() -> None:
+    payload = {"status": "critical", "metric_value": 94.0, "anomaly_score": 0.89}
+    result = _try_direct_extraction(payload)
+    assert isinstance(result, AxiomDraft)
+    assert result.status == "critical"
+    assert result.metric_value == 94.0
+    assert result.anomaly_score == 0.89
+
+
+def test_try_direct_extraction_returns_none_for_missing_fields() -> None:
+    assert _try_direct_extraction({"raw_log": "CPU at 94%"}) is None
+
+
+def test_try_direct_extraction_returns_none_for_invalid_status() -> None:
+    assert _try_direct_extraction({"status": "unknown", "metric_value": 1.0, "anomaly_score": 0.5}) is None
+
+
+def test_try_direct_extraction_returns_none_for_out_of_range_anomaly_score() -> None:
+    assert _try_direct_extraction({"status": "nominal", "metric_value": 1.0, "anomaly_score": 2.5}) is None
+
+
+@pytest.mark.asyncio
+async def test_extract_skips_llm_when_payload_is_structured() -> None:
+    """Fast path: a structured payload must not call the LLM at all."""
+    client = make_mock_client(return_value=AxiomDraft(status="nominal", metric_value=0.0, anomaly_score=0.0))
+    telemetry = make_telemetry(payload={"status": "degraded", "metric_value": 78.0, "anomaly_score": 0.6})
+
+    result = await extract(telemetry, client=client)
+
+    client.chat.completions.create.assert_not_called()
+    assert result.status == "degraded"
+    assert result.metric_value == 78.0
 
 
 # ── Success path ──────────────────────────────────────────────────────────────
