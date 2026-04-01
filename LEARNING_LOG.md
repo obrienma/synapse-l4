@@ -4,6 +4,59 @@ Append-only. One entry per build phase. Format: Pattern → Anti-Pattern → Cha
 
 ---
 
+## Phase 6 — EventHorizon WebSocket Consumer
+
+**Completed:** 2026-03-31
+**Files:** `src/clients/eventhorizon.py`, `src/clients/eventhorizon_test.py`, `main.py` (lifespan wired)
+
+---
+
+### Patterns Used
+
+**Resilient Async Subscriber**
+A long-lived WebSocket client with exponential backoff reconnection. The outer `run()` loop catches `ConnectionClosed` and any unexpected exception, sleeps for an increasing delay, and retries. Delay starts at 1s, doubles on each failure, caps at 60s, resets to 1s on clean reconnect. `asyncio.CancelledError` is re-raised immediately — it is the shutdown signal, not a failure.
+
+> **Q:** Why is `asyncio.CancelledError` re-raised in the reconnection loop rather than caught and retried?
+> **A:** `CancelledError` means the task was cancelled by the caller (lifespan shutdown). Catching and retrying it would make the consumer impossible to stop gracefully. Every other exception is a transient failure worth retrying; `CancelledError` is an intentional termination signal.
+
+---
+
+**Per-Message Resilience**
+`_handle_message` catches all pipeline exceptions (`ExtractionError`, `JudgeRejection`, `EmitError`) and logs them without re-raising. A single bad telemetry packet must not stop the consumer — the stream continues. JSON parse errors are also caught and skipped.
+
+> **Q:** Why does a pipeline failure on one message not stop the consumer?
+> **A:** The consumer is a stream processor. EventHorizon sends hundreds of events — if one causes a `JudgeRejection`, the correct response is to log it, skip it, and process the next one. Crashing the consumer on a single bad event would require a full reconnect and potentially lose subsequent events during the gap.
+
+---
+
+**Direct Pipeline Invocation (Bypass HTTP)**
+The consumer calls `extract → judge → emit` directly — not via `POST /ingest`. The HTTP route and the WS consumer are two entry points to the same pipeline functions. This avoids an unnecessary HTTP round-trip and keeps the consumer testable without starting the HTTP server.
+
+> **Q:** What would go wrong if the WebSocket consumer called `POST /ingest` over HTTP instead of calling pipeline functions directly?
+> **A:** It would depend on the HTTP server being up and reachable (localhost coupling), add latency for every event, and require a real server in consumer tests. The pipeline functions are importable independently — using them directly is simpler and correct.
+
+---
+
+### Anti-Patterns Avoided
+
+**Crashing on Bad Input**
+A consumer that raises on malformed JSON or a pipeline error would disconnect from EventHorizon on every bad message, triggering a reconnect cycle. The exponential backoff would cause increasing delays processing subsequent valid messages. Per-message resilience prevents this entirely.
+
+**Ignoring Shutdown**
+Re-raising `asyncio.CancelledError` immediately (rather than catching it in the reconnect loop) ensures the consumer stops cleanly when `lifespan` cancels the task. Without this, the task would swallow the cancellation and continue running after FastAPI tries to shut down.
+
+---
+
+### Decisions
+
+**`_consume` and `run` as separate functions**
+`_consume` handles a single connection. `run` handles the reconnection loop. This separation makes both independently testable: `_consume` tests verify message routing through a mock WS; `run` tests verify reconnection by patching `_consume` itself.
+
+**TODO on `_event_to_telemetry` field mapping**
+The exact EventHorizon `StoredEvent` shape isn't confirmed yet — the mapping uses `raw.id` as `source_id` with a fallback chain. This is a known approximation, documented with a TODO, to be aligned when end-to-end integration is tested.
+
+---
+
 ## Phase 5 — FastAPI Ingest Route
 
 **Completed:** 2026-03-31

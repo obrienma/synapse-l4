@@ -1,17 +1,35 @@
+import asyncio
+import logging
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
 from fastapi import FastAPI
 
-from config import settings  # noqa: F401  — validates env on import
+from config import settings
 from src.api.ingest import router as ingest_router
+from src.clients.eventhorizon import run as run_eventhorizon_consumer
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    # TODO: initialise Logfire, LLM client, Sentinel-L7 HTTP client
+    # TODO: initialise Logfire instrumentation (Phase 7)
+    consumer_task: asyncio.Task[None] | None = None
+    if settings.eventhorizon_ws_url:
+        consumer_task = asyncio.create_task(
+            run_eventhorizon_consumer(str(settings.eventhorizon_ws_url))
+        )
+        logger.info("EventHorizon consumer started: %s", settings.eventhorizon_ws_url)
+
     yield
-    # TODO: graceful shutdown — close HTTP clients, WS consumer
+
+    if consumer_task is not None:
+        consumer_task.cancel()
+        try:
+            await consumer_task
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(title="Synapse-L4", version="0.1.0", lifespan=lifespan)
