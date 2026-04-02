@@ -1,10 +1,10 @@
-# Synapse-L4 — AI Logic & Evaluation Sidecar
+# 🧠 Synapse-L4 — AI Logic & Evaluation Sidecar
 
 > **"The Brain"** in a three-system telemetry architecture. Synapse-L4 transforms raw, high-throughput telemetry from EventHorizon into deterministic, schema-validated **Axioms** that Sentinel-L7 can safely cache and act upon.
 
 ---
 
-## Role in the Ecosystem
+## 🌐 Role in the Ecosystem
 
 ```
 ┌─────────────────────┐     raw telemetry       ┌─────────────────────┐     validated Axioms    ┌─────────────────────┐
@@ -17,15 +17,15 @@
 
 | System | Role | Responsibility |
 |---|---|---|
-| **EventHorizon** | Nervous System | Real-time telemetry ingestion, reactive data plane |
-| **Synapse-L4** | Brain | Specification-Driven orchestration, LLM contract enforcement |
-| **Sentinel-L7** | Gatekeeper | Semantic caching, API gateway, financial/transactional state |
+| ⚡ **EventHorizon** | Nervous System | Real-time telemetry ingestion, reactive data plane |
+| 🧠 **Synapse-L4** | Brain | Specification-Driven orchestration, LLM contract enforcement |
+| 🛡️ **Sentinel-L7** | Gatekeeper | Semantic caching, API gateway, financial/transactional state |
 
 ---
 ![ezgif-synapse-logfile](https://github.com/user-attachments/assets/dd1445ba-cc1f-4ee7-8a37-650b50d53d94)
 
 ---
-## Architecture: Four-Stage Validation Node
+## 🔄 Architecture: Four-Stage Validation Node
 
 ```
 Consume  →  Extract  →  Evaluate  →  Emit
@@ -56,20 +56,20 @@ Each stage is independently testable. Data flows one direction — no stage call
 
 ---
 
-## Stack
+## 🛠️ Stack
 
 | Layer | Tech |
 |---|---|
-| Language | Python 3.12+, asyncio |
-| Framework | FastAPI |
-| LLM contract enforcement | Pydantic v2 + Instructor |
-| Observability | Logfire |
-| Package management | uv |
-| Testing | pytest + pytest-asyncio |
+| 🐍 Language | Python 3.12+, asyncio |
+| ⚡ Framework | FastAPI |
+| 🤖 LLM contract enforcement | Pydantic v2 + Instructor |
+| 🔭 Observability | Logfire |
+| 📦 Package management | uv |
+| 🧪 Testing | pytest + pytest-asyncio |
 
 ---
 
-## Project Structure
+## 📁 Project Structure
 
 ```
 synapse-l4/
@@ -93,7 +93,7 @@ synapse-l4/
 
 ---
 
-## Quick Start
+## 🚀 Quick Start
 
 **Prerequisites:** Python 3.12+, [uv](https://docs.astral.sh/uv/)
 
@@ -113,7 +113,7 @@ uv run fastapi dev main.py
 
 ---
 
-## Commands
+## ⚙️ Commands
 
 ```bash
 uv run fastapi dev main.py   # FastAPI dev server (hot reload, :8000)
@@ -125,7 +125,7 @@ uv run pytest --watch            # Watch mode
 
 ---
 
-## Docs
+## 📚 Docs
 
 - [Architecture](docs/ARCHITECTURE.md) — pipeline stages, data flow, integration points
 - [API Reference](docs/API.md) — endpoints, request/response schemas
