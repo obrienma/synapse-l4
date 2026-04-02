@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -28,6 +28,21 @@ def make_mock_client(return_value: object | None = None, side_effect: Exception 
         mock_create.return_value = return_value
     client.chat.completions.create = mock_create
     return client
+
+
+# ── Dry run mode ─────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_extract_dry_run_returns_stub_without_calling_llm() -> None:
+    client = make_mock_client(return_value=AxiomDraft(status="critical", metric_value=99.0, anomaly_score=0.99))
+
+    with patch("src.nodes.extractor.settings") as mock_settings:
+        mock_settings.llm_dry_run = True
+        result = await extract(make_telemetry(), client=client)
+
+    client.chat.completions.create.assert_not_called()
+    assert isinstance(result, AxiomDraft)
+    assert result.status == "nominal"  # stub value
 
 
 # ── Fast path (deterministic extraction) ─────────────────────────────────────

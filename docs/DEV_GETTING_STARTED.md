@@ -40,18 +40,20 @@ Open `.env` and fill in required values:
 OPENAI_API_KEY=sk-...
 # ANTHROPIC_API_KEY=sk-ant-...
 
-# Downstream system
-SENTINEL_L7_URL=http://localhost:8001
+# Downstream system — Redis Streams delivery (required)
+SENTINEL_REDIS_URL=rediss://:PASSWORD@HOST:PORT
+SENTINEL_L7_URL=http://localhost:8001  # optional, retained for health checks
 
 # Upstream system (optional — only needed for WS consumer mode)
-EVENTHORIZON_WS_URL=ws://localhost:3000/live
+EVENTHORIZON_WS_URL=ws://localhost:3000/ws
 
-# Observability
+# Observability (optional — omit to run without exporting traces)
 LOGFIRE_TOKEN=...
 
 # Optional tuning
 LLM_MODEL=gpt-4o-mini
-INSTRUCTOR_MAX_RETRIES=3
+INSTRUCTOR_MAX_RETRIES=1        # keep low in development to preserve LLM quota
+LLM_DRY_RUN=false               # set true to skip LLM calls entirely (stub response, no tokens burned)
 LOG_LEVEL=INFO
 ```
 
@@ -88,7 +90,7 @@ curl -X POST http://localhost:8000/ingest \
   }'
 ```
 
-Expected response:
+Expected response (with `LLM_DRY_RUN=false` and a valid API key):
 
 ```json
 {
@@ -102,6 +104,8 @@ Expected response:
   "pipeline_ms": 720
 }
 ```
+
+With `LLM_DRY_RUN=true`, the stub values `status: "nominal"`, `metric_value: 42.0`, `anomaly_score: 0.1` are returned instead.
 
 ---
 
@@ -161,3 +165,5 @@ With both EventHorizon and Sentinel-L7 running:
 **`judge_rejected` responses** — the extracted Axiom violated a business rule. Check the `rule` field in the error response for the specific constraint.
 
 **WS consumer disconnects** — the client reconnects with exponential backoff automatically. If EventHorizon is not reachable, it retries indefinitely and logs each attempt.
+
+**LLM quota exhausted** — set `LLM_DRY_RUN=true` in `.env` and restart. The extractor returns a hardcoded stub `AxiomDraft`; the full pipeline (Judge → Emit) still runs. Useful for testing downstream behaviour and generating Logfire traces without burning tokens.

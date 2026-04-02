@@ -20,7 +20,10 @@ from typing import Any
 
 import instructor
 import logfire
+import logging
 from openai import AsyncOpenAI
+
+logger = logging.getLogger(__name__)
 from pydantic import ValidationError
 
 from config import settings
@@ -44,15 +47,55 @@ def _try_direct_extraction(payload: dict[str, Any]) -> AxiomDraft | None:
       them without calling the LLM. This is the common case when EventHorizon
       sends structured events — the LLM is only needed for unstructured text.
 
+    Handles two shapes:
+      1. Already-shaped: payload has status/metric_value/anomaly_score directly.
+      2. EventHorizon raw document: nested raw.payload + processed.classification.
+
     Returns None if the payload is missing or invalid for any required field,
     so the caller falls through to LLM-based extraction.
     """
+    # Shape 1: already-shaped payload
     try:
         return AxiomDraft(
             status=payload["status"],
             metric_value=payload["metric_value"],
             anomaly_score=payload["anomaly_score"],
         )
+    except (KeyError, ValidationError):
+        pass
+
+    # Shape 2: EventHorizon raw document
+    try:
+        inner: dict[str, Any] = payload.get("raw", {}).get("payload", {})
+        processed: dict[str, Any] = payload.get("processed", {})
+
+        pipeline_status = inner.get("status", "")
+        classification = processed.get("classification", "")
+        if pipeline_status in ("passed", "success"):
+            status = "nominal"
+        elif pipeline_status in ("failed", "error"):
+            status = "critical"
+        elif classification == "normal":
+            status = "nominal"
+        elif classification == "warning":
+            status = "degraded"
+        elif classification == "critical":
+            status = "critical"
+        else:
+            status = "degraded"
+
+        metric_value = float(inner.get("durationMs") or inner.get("value") or 0.0)
+
+        if classification == "normal":
+            anomaly_score = 0.1
+        elif classification == "warning":
+            anomaly_score = 0.5
+        elif classification == "critical":
+            anomaly_score = 0.9
+        else:
+            anomaly_score = 0.3
+
+        return AxiomDraft(status=status, metric_value=metric_value, anomaly_score=anomaly_score)
     except (KeyError, ValidationError):
         return None
 
@@ -83,10 +126,12 @@ async def extract(
         ExtractionError: if the LLM cannot conform to the schema after max_retries,
                          or if the LLM API is unreachable
     """
+    logger.debug("extract: payload keys=%s", list(telemetry.payload.keys()))
     fast = _try_direct_extraction(telemetry.payload)
     if fast is not None:
         logfire.info("extract: fast path succeeded, skipping LLM", source_id=telemetry.source_id)
         return fast
+    logger.warning("extract: fast path missed, falling through to LLM. payload=%s", telemetry.payload)
 
     _client = client or _default_client()
 

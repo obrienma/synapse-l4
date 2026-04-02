@@ -47,7 +47,7 @@ Submit a raw telemetry packet for processing through the Validation Node pipelin
 |---|---|---|
 | `axiom.status` | `"nominal" \| "degraded" \| "critical"` | Classified system state |
 | `axiom.metric_value` | float | Primary extracted metric |
-| `axiom.anomaly_score` | float [0.0–1.0] | LLM-extracted anomaly confidence score |
+| `axiom.anomaly_score` | float [0.0–1.0] | Anomaly confidence score (extracted or fast-path) |
 | `axiom.source_id` | string | Echoed from request |
 | `axiom.emitted_at` | ISO 8601 datetime | Timestamp of validated emission |
 | `pipeline_ms` | int | Total wall-clock time for the full pipeline |
@@ -59,7 +59,7 @@ Returned when Instructor exhausts retries without the LLM conforming to the Axio
 ```json
 {
   "error": "extraction_failed",
-  "detail": "LLM did not produce a valid Axiom after 3 attempts",
+  "detail": "LLM did not produce a valid Axiom after N attempts",
   "raw_payload": { ... }
 }
 ```

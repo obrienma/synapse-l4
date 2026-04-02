@@ -426,6 +426,22 @@ Structural sanity checks run before cross-field business logic. A draft with `me
 
 ---
 
+### Challenges
+
+**Pydantic silently accepted `NaN` and `±Inf` as valid `float` fields**
+The `metric_value` field on `AxiomDraft` is typed as `float`. Pydantic v2 treats `NaN`, `Infinity`, and `-Infinity` as valid Python floats — they pass schema validation without error. The problem only surfaced when considering downstream serialisation: `json.dumps({"metric_value": float("inf")})` raises `ValueError` because JSON has no `Infinity` literal. The fix was a dedicated `metric_value_finite` rule rather than a Pydantic validator, to keep the sentinel at the Judge boundary where all business rules live.
+
+> **Q:** Why doesn't a `float` field in Pydantic v2 reject `NaN` or `Infinity`?
+> **A:** Pydantic validates Python types, not JSON-serialisability. `NaN` and `Infinity` are legal IEEE 754 floats in Python. JSON serialisation (`json.dumps`) rejects them because the JSON spec has no representation for them. The validation gap sits between the two layers — Pydantic's type system and the wire format — which is why a business rule in the Judge is the right place to close it.
+
+**`extra="forbid"` was missing from `AxiomDraft` — pipeline-owned fields could be passed in**
+`AxiomDraft` lacked `extra="forbid"`, meaning fields like `source_id` and `emitted_at` — which are assigned by the pipeline, not the LLM — could be included in LLM output without raising an error. This would silently let the LLM override pipeline-controlled provenance fields. Adding `extra="forbid"` actively rejects any unrecognised field at the model boundary, enforcing that `AxiomDraft` is strictly an LLM output contract and nothing more.
+
+> **Q:** What failure mode does `extra="forbid"` on `AxiomDraft` prevent?
+> **A:** An LLM hallucinating or being prompted to include `source_id` or `emitted_at` in its structured output — overwriting pipeline-assigned provenance with unverified values. `extra="forbid"` raises `ValidationError` on any field not explicitly declared on `AxiomDraft`, making the model's contract explicit and tamper-resistant.
+
+---
+
 ## Phase 2 — AxiomDraft Model + Extractor Node
 
 **Completed:** 2026-03-31

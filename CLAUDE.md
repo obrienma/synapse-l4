@@ -52,6 +52,7 @@ main.py          # FastAPI app entrypoint
 - **`src/models/axiom.py` is the shared contract**: All stages import `Axiom` and related types from this module. No ad-hoc `dict` schemas anywhere in the pipeline.
 - **Judge pass is mandatory**: Extraction without evaluation is not a valid pipeline path. The `extractor` output must flow through `judge` before reaching `emitter`.
 - **Config validated at startup**: `config.py` uses Pydantic `BaseSettings`. The process exits with a clear error if any required env var is missing or invalid.
+- **Keep `.env.example` in sync**: Any time `.env` is modified, update `.env.example` to reflect the change — keys and comments only, never real values (use placeholders like `your-token-here` or `rediss://:PASSWORD@HOST:PORT`).
 
 ---
 
@@ -62,7 +63,6 @@ main.py          # FastAPI app entrypoint
 | Language | Python 3.12+, asyncio | |
 | Framework | FastAPI | async routes throughout |
 | Validation / LLM contracts | Pydantic v2 + Instructor | structured generation only |
-| RAG / semantic retrieval | LlamaIndex | telemetry semantic search |
 | Observability | Logfire | accuracy benchmarking + tracing |
 | Package management | uv (pyproject.toml) | |
 | Testing | pytest + pytest-asyncio | |
@@ -194,7 +194,7 @@ Follow these rules for every interaction:
     - Async context manager leaks (unclosed httpx clients, WebSocket connections)
     - Instructor retry loop exhaustion — what happens when `max_retries` is exceeded?
     - Scalability bottlenecks in the pipeline
-5. **No Hallucinations:** If Instructor, LlamaIndex, or Logfire have async quirks or version-specific behavior, flag it explicitly before writing code.
+5. **No Hallucinations:** If Instructor or Logfire have async quirks or version-specific behavior, flag it explicitly before writing code.
 6. **Failure Mode First:** Before implementing any component, describe how it fails. What happens when the LLM returns unparseable output? When Sentinel-L7 is unreachable? When EventHorizon's WebSocket drops mid-stream? Write to `LEARNING_LOG.md`.
 7. **Vocabulary Enforcement:** Use correct terminology consistently — *structured generation*, *constrained decoding*, *validator-as-judge*, *idempotent emission*, *at-most-once delivery*. Name the concept formally before casual language.
 8. **Checkpoint Questions:** After each completed phase, ask me to explain back what was built and *why* — e.g. "Why does the Judge run after Instructor extraction, not inside the Instructor validator?"

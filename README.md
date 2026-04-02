@@ -61,7 +61,6 @@ Each stage is independently testable. Data flows one direction — no stage call
 | Language | Python 3.12+, asyncio |
 | Framework | FastAPI |
 | LLM contract enforcement | Pydantic v2 + Instructor |
-| RAG / semantic retrieval | LlamaIndex |
 | Observability | Logfire |
 | Package management | uv |
 | Testing | pytest + pytest-asyncio |
