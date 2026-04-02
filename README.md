@@ -22,7 +22,9 @@
 | **Sentinel-L7** | Gatekeeper | Semantic caching, API gateway, financial/transactional state |
 
 ---
+![ezgif-synapse-logfile](https://github.com/user-attachments/assets/dd1445ba-cc1f-4ee7-8a37-650b50d53d94)
 
+---
 ## Architecture: Four-Stage Validation Node
 
 ```
