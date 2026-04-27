@@ -26,5 +26,9 @@ class Settings(BaseSettings):
     logfire_token: str | None = None
     log_level: str = "INFO"
 
+    # Pipeline tuning
+    pipeline_queue_size: int = 100  # max RawTelemetry items in-flight before backpressure
+    pipeline_workers: int = 3       # concurrent pipeline coroutines draining the queue
+
 
 settings = Settings()  # type: ignore[call-arg]  # validated from env on import
