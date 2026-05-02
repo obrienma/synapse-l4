@@ -12,6 +12,10 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+# Compliance domains — first hyphen-delimited segment of policy filenames in Sentinel-L7.
+# Extend this Literal as new policy corpora are added.
+ComplianceDomain = Literal["aml", "gdpr", "hipaa"]
+
 
 class Axiom(BaseModel):
     """
@@ -29,11 +33,12 @@ class Axiom(BaseModel):
     anomaly_score: Annotated[float, Field(ge=0.0, le=1.0)]
     source_id: str
     emitted_at: datetime
+    domain: ComplianceDomain | None = None
 
 
 class AxiomDraft(BaseModel):
     """
-    LLM-extracted fields only — the three values the model fills in.
+    LLM-extracted fields only — the four values the model fills in.
 
     Does not include source_id (comes from RawTelemetry) or emitted_at
     (set by the Emitter at delivery time). The Extractor returns this;
@@ -48,6 +53,7 @@ class AxiomDraft(BaseModel):
     status: Literal["nominal", "degraded", "critical"]
     metric_value: float
     anomaly_score: Annotated[float, Field(ge=0.0, le=1.0)]
+    domain: ComplianceDomain | None = None
 
 
 class RawTelemetry(BaseModel):

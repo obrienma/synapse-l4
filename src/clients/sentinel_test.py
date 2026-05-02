@@ -56,6 +56,29 @@ async def test_post_axiom_serialises_emitted_at_as_iso_string() -> None:
     assert fields["emitted_at"] == "2026-03-31T12:00:00+00:00"
 
 
+# ── Domain field ─────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_post_axiom_includes_domain_when_present() -> None:
+    client, mock_redis = make_client()
+    axiom = Axiom(
+        status="critical", metric_value=94.0, anomaly_score=0.91,
+        source_id="sensor-01", emitted_at=datetime(2026, 3, 31, 12, 0, 0, tzinfo=timezone.utc),
+        domain="aml",
+    )
+    await client.post_axiom(axiom)
+    fields = mock_redis.xadd.call_args.args[1]
+    assert fields["domain"] == "aml"
+
+
+@pytest.mark.asyncio
+async def test_post_axiom_omits_domain_key_when_none() -> None:
+    client, mock_redis = make_client()
+    await client.post_axiom(valid_axiom())  # domain=None by default
+    fields = mock_redis.xadd.call_args.args[1]
+    assert "domain" not in fields
+
+
 # ── Failure ───────────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio

@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 from pydantic import ValidationError
 
 from config import settings
-from src.models.axiom import AxiomDraft, ExtractionError, RawTelemetry
+from src.models.axiom import AxiomDraft, ComplianceDomain, ExtractionError, RawTelemetry
 
 _SYSTEM_PROMPT = """\
 You are a telemetry analysis system. Given a raw telemetry payload, extract:
@@ -35,9 +35,19 @@ You are a telemetry analysis system. Given a raw telemetry payload, extract:
 - status: overall system state — "nominal", "degraded", or "critical"
 - metric_value: the primary numeric metric from the payload (e.g. CPU %, memory %, error rate)
 - anomaly_score: your confidence that this reading represents an anomaly, from 0.0 (normal) to 1.0 (critical anomaly)
+- domain: the compliance domain this event belongs to — one of "aml", "gdpr", "hipaa", or null if it cannot be determined
 
 Be precise. Do not invent values not present or strongly implied by the payload.
 """
+
+_VALID_DOMAINS: frozenset[str] = frozenset({"aml", "gdpr", "hipaa"})
+
+
+def _valid_domain(value: object) -> ComplianceDomain | None:
+    """Return value if it is a known ComplianceDomain, otherwise None."""
+    if isinstance(value, str) and value in _VALID_DOMAINS:
+        return value  # type: ignore[return-value]
+    return None
 
 
 def _try_direct_extraction(payload: dict[str, Any]) -> AxiomDraft | None:
@@ -60,11 +70,14 @@ def _try_direct_extraction(payload: dict[str, Any]) -> AxiomDraft | None:
             status=payload["status"],
             metric_value=payload["metric_value"],
             anomaly_score=payload["anomaly_score"],
+            domain=_valid_domain(payload.get("domain")),
         )
     except (KeyError, ValidationError):
         pass
 
-    # Shape 2: EventHorizon raw document
+    # Shape 2: EventHorizon raw document — requires at least one structural key
+    if "raw" not in payload and "processed" not in payload:
+        return None
     try:
         inner: dict[str, Any] = payload.get("raw", {}).get("payload", {})
         processed: dict[str, Any] = payload.get("processed", {})
@@ -95,7 +108,12 @@ def _try_direct_extraction(payload: dict[str, Any]) -> AxiomDraft | None:
         else:
             anomaly_score = 0.3
 
-        return AxiomDraft(status=status, metric_value=metric_value, anomaly_score=anomaly_score)
+        return AxiomDraft(
+            status=status,
+            metric_value=metric_value,
+            anomaly_score=anomaly_score,
+            domain=_valid_domain(processed.get("domain")),
+        )
     except (KeyError, ValidationError):
         return None
 

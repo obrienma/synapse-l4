@@ -69,9 +69,11 @@ main.py          # FastAPI app entrypoint
 
 ---
 
-## Axiom Shape (Initial)
+## Axiom Shape
 
 ```python
+ComplianceDomain = Literal["aml", "gdpr", "hipaa"]
+
 class Axiom(BaseModel):
     model_config = ConfigDict(frozen=True)  # immutable
 
@@ -80,9 +82,12 @@ class Axiom(BaseModel):
     anomaly_score: Annotated[float, Field(ge=0.0, le=1.0)]
     source_id: str
     emitted_at: datetime
+    domain: ComplianceDomain | None = None  # omitted from XADD when None
 ```
 
 `frozen=True` enforces immutability at the Pydantic level. Any attempt to mutate an emitted Axiom raises a `ValidationError`.
+
+`domain` is optional — when `None`, the key is absent from the Redis XADD payload entirely (not set to `null`). Sentinel-L7 treats a missing `domain` key as "retrieve globally" across all policy namespaces.
 
 ---
 
@@ -124,6 +129,8 @@ Lessons burned in during build — check these before touching the relevant area
 - **Obligatory LLM Invocation**: Every payload going through the LLM regardless of structure exhausts token quota fast. `_try_direct_extraction()` in `extractor.py` provides a deterministic fast path — structured payloads never reach the LLM. Don't remove it.
 - **`instructor_max_retries` multiplier**: Each `extract()` call on an unstructured payload costs up to `1 + max_retries` LLM calls. At the default of 3, one struggling message burns 4 calls. Keep `INSTRUCTOR_MAX_RETRIES=1` in `.env` for development.
 - **`_try_direct_extraction` must catch both `KeyError` and `ValidationError`**: `KeyError` = missing field; `ValidationError` = present but invalid (e.g. `status="unknown"`, `anomaly_score=2.5`). Catching only `KeyError` lets an invalid-but-present payload bypass the LLM and produce a corrupt `AxiomDraft`.
+- **`_valid_domain()` helper prevents ValidationError cascade on bad domain values**: Passing an unrecognised domain string directly to `AxiomDraft()` raises `ValidationError`, which causes Shape 1 to fall through to Shape 2, then to the LLM — wasting a call for an otherwise-valid structured payload. `_valid_domain()` sanitises the value to `None` before construction.
+- **Shape 2 requires a structural key guard**: Without `if "raw" not in payload and "processed" not in payload: return None`, Shape 2 matches *any* payload using fallback values (`status="degraded"`, `metric_value=0.0`), silently swallowing unstructured payloads that should reach the LLM.
 
 ### Async / WebSocket
 - **`asyncio.CancelledError` is `BaseException`, not `Exception`** (Python 3.8+): It falls through `except Exception` naturally. The explicit `except asyncio.CancelledError: raise` in `eventhorizon.py` is intentional documentation — do not collapse it into the generic `except Exception` block.

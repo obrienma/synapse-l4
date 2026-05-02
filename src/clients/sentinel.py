@@ -38,13 +38,15 @@ class SentinelClient:
         Raises:
             EmitError: if the Redis connection fails or XADD returns an error
         """
-        fields = {
+        fields: dict[str, str] = {
             "status": axiom.status,
             "metric_value": str(axiom.metric_value),
             "anomaly_score": str(axiom.anomaly_score),
             "source_id": axiom.source_id,
             "emitted_at": axiom.emitted_at.isoformat(),
         }
+        if axiom.domain is not None:
+            fields["domain"] = axiom.domain
         try:
             await self._redis.xadd(AXIOMS_STREAM, fields)  # type: ignore[arg-type]
         except Exception as exc:

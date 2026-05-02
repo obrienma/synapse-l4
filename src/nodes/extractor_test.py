@@ -30,21 +30,6 @@ def make_mock_client(return_value: object | None = None, side_effect: Exception 
     return client
 
 
-# ── Dry run mode ─────────────────────────────────────────────────────────────
-
-@pytest.mark.asyncio
-async def test_extract_dry_run_returns_stub_without_calling_llm() -> None:
-    client = make_mock_client(return_value=AxiomDraft(status="critical", metric_value=99.0, anomaly_score=0.99))
-
-    with patch("src.nodes.extractor.settings") as mock_settings:
-        mock_settings.llm_dry_run = True
-        result = await extract(make_telemetry(), client=client)
-
-    client.chat.completions.create.assert_not_called()
-    assert isinstance(result, AxiomDraft)
-    assert result.status == "nominal"  # stub value
-
-
 # ── Fast path (deterministic extraction) ─────────────────────────────────────
 
 def test_try_direct_extraction_returns_axiom_draft_for_structured_payload() -> None:
@@ -66,6 +51,28 @@ def test_try_direct_extraction_returns_none_for_invalid_status() -> None:
 
 def test_try_direct_extraction_returns_none_for_out_of_range_anomaly_score() -> None:
     assert _try_direct_extraction({"status": "nominal", "metric_value": 1.0, "anomaly_score": 2.5}) is None
+
+
+def test_try_direct_extraction_extracts_domain_from_payload() -> None:
+    payload = {"status": "critical", "metric_value": 94.0, "anomaly_score": 0.89, "domain": "aml"}
+    result = _try_direct_extraction(payload)
+    assert result is not None
+    assert result.domain == "aml"
+
+
+def test_try_direct_extraction_domain_none_when_absent() -> None:
+    payload = {"status": "critical", "metric_value": 94.0, "anomaly_score": 0.89}
+    result = _try_direct_extraction(payload)
+    assert result is not None
+    assert result.domain is None
+
+
+def test_try_direct_extraction_domain_none_for_unknown_domain() -> None:
+    # Unknown domain is sanitised to None — does not cause fast path to fail
+    payload = {"status": "nominal", "metric_value": 10.0, "anomaly_score": 0.1, "domain": "kyc"}
+    result = _try_direct_extraction(payload)
+    assert result is not None
+    assert result.domain is None
 
 
 @pytest.mark.asyncio

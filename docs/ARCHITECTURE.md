@@ -57,7 +57,7 @@ Input is a loosely-typed `RawTelemetry` model. No LLM calls occur here — this 
 
 Maps raw telemetry to a typed `AxiomDraft`. Uses a two-path strategy:
 
-**Deterministic fast path** — if the payload already contains valid `status`, `metric_value`, and `anomaly_score` fields, they are extracted directly without calling the LLM. This is the common case for structured EventHorizon events.
+**Deterministic fast path** — if the payload already contains valid `status`, `metric_value`, `anomaly_score` (and optionally `domain`) fields, they are extracted directly without calling the LLM. This is the common case for structured EventHorizon events. The fast path requires at least one of `raw` or `processed` keys to be present for EventHorizon-shaped documents; bare unstructured payloads fall through to the LLM.
 
 **LLM fallback** — for unstructured payloads, uses **Instructor** (patched over the LLM client) to constrain the response to the `AxiomDraft` schema. Instructor retries automatically if the model returns malformed output, up to `INSTRUCTOR_MAX_RETRIES`.
 
@@ -68,12 +68,12 @@ Maps raw telemetry to a typed `AxiomDraft`. Uses a two-path strategy:
 ```python
 # Fast path — no LLM call if payload is already structured
 if all fields present and valid:
-    return AxiomDraft(status=..., metric_value=..., anomaly_score=...)
+    return AxiomDraft(status=..., metric_value=..., anomaly_score=..., domain=...)
 
 # LLM fallback via Instructor
 axiom_draft = await client.chat.completions.create(
     model=settings.llm_model,
-    response_model=AxiomDraft,
+    response_model=AxiomDraft,  # includes domain classification
     messages=[{"role": "user", "content": raw_payload}],
 )
 ```
@@ -107,6 +107,8 @@ Serializes the validated, frozen Axiom to JSON and delivers it to Sentinel-L7. T
 `src/models/axiom.py` is the **single source of truth** for all data shapes in Synapse-L4. Every stage imports from this module — no stage defines its own event shape.
 
 ```python
+ComplianceDomain = Literal["aml", "gdpr", "hipaa"]
+
 class Axiom(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -115,9 +117,12 @@ class Axiom(BaseModel):
     anomaly_score: Annotated[float, Field(ge=0.0, le=1.0)]
     source_id: str
     emitted_at: datetime
+    domain: ComplianceDomain | None = None
 ```
 
 `frozen=True` makes all instances hashable and immutable. Any attempt to set a field after instantiation raises a `ValidationError`.
+
+`domain` is the compliance policy namespace this event belongs to. It is `None` when the domain is ambiguous — in which case the key is omitted entirely from the Redis XADD payload so Sentinel-L7 falls back to global policy retrieval.
 
 ---
 
@@ -127,7 +132,6 @@ class Axiom(BaseModel):
 |---|---|---|
 | LLM unreachable | Instructor raises `openai.APIConnectionError` | 503 returned; no partial Axiom emitted |
 | Instructor `max_retries` exhausted | LLM cannot conform to schema after N attempts | 422 with `extraction_failed` detail |
-| `LLM_DRY_RUN=true` | Extraction returns a hardcoded stub `AxiomDraft` | LLM is never called; pipeline runs fully for testing |
 | Judge pass fails | Business rule violated | 422 with structured `JudgeRejection` |
 | Sentinel-L7 unreachable | HTTP client timeout | 502; Axiom is not emitted; caller can retry |
 | EventHorizon WS drops | `websockets.ConnectionClosed` | Client reconnects with exponential backoff |

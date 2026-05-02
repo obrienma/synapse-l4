@@ -56,6 +56,7 @@ async def emit(
         anomaly_score=draft.anomaly_score,
         source_id=telemetry.source_id,
         emitted_at=datetime.now(UTC),
+        domain=draft.domain,
     )
 
     _client = client or _default_client()

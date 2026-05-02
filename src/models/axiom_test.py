@@ -103,12 +103,45 @@ def test_raw_telemetry_rejects_missing_source_id() -> None:
         RawTelemetry(payload={"x": 1})  # type: ignore[call-arg]
 
 
+# ── Axiom: domain field ───────────────────────────────────────────────────────
+
+def test_axiom_domain_defaults_to_none() -> None:
+    axiom = valid_axiom()
+    assert axiom.domain is None
+
+
+def test_axiom_accepts_valid_domain() -> None:
+    for domain in ("aml", "gdpr", "hipaa"):
+        axiom = valid_axiom(domain=domain)
+        assert axiom.domain == domain
+
+
+def test_axiom_rejects_invalid_domain() -> None:
+    with pytest.raises(ValidationError):
+        valid_axiom(domain="kyc")
+
+
 # ── AxiomDraft ────────────────────────────────────────────────────────────────
 
 def test_axiom_draft_constructs_with_valid_fields() -> None:
     draft = AxiomDraft(status="degraded", metric_value=75.0, anomaly_score=0.6)
     assert draft.status == "degraded"
     assert draft.anomaly_score == 0.6
+
+
+def test_axiom_draft_domain_defaults_to_none() -> None:
+    draft = AxiomDraft(status="nominal", metric_value=1.0, anomaly_score=0.1)
+    assert draft.domain is None
+
+
+def test_axiom_draft_accepts_valid_domain() -> None:
+    draft = AxiomDraft(status="critical", metric_value=95.0, anomaly_score=0.95, domain="aml")
+    assert draft.domain == "aml"
+
+
+def test_axiom_draft_rejects_invalid_domain() -> None:
+    with pytest.raises(ValidationError):
+        AxiomDraft(status="nominal", metric_value=1.0, anomaly_score=0.1, domain="kyc")
 
 
 def test_axiom_draft_rejects_anomaly_score_out_of_range() -> None:

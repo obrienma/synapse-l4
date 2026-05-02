@@ -37,11 +37,14 @@ Submit a raw telemetry packet for processing through the Validation Node pipelin
     "metric_value": 98.0,
     "anomaly_score": 0.91,
     "source_id": "sensor-42",
-    "emitted_at": "2026-03-31T14:22:11.043Z"
+    "emitted_at": "2026-03-31T14:22:11.043Z",
+    "domain": "aml"
   },
   "pipeline_ms": 812
 }
 ```
+
+`domain` is omitted from the response (and from the Redis XADD payload) when the compliance domain cannot be determined.
 
 | Field | Type | Description |
 |---|---|---|
@@ -50,6 +53,7 @@ Submit a raw telemetry packet for processing through the Validation Node pipelin
 | `axiom.anomaly_score` | float [0.0–1.0] | Anomaly confidence score (extracted or fast-path) |
 | `axiom.source_id` | string | Echoed from request |
 | `axiom.emitted_at` | ISO 8601 datetime | Timestamp of validated emission |
+| `axiom.domain` | `"aml" \| "gdpr" \| "hipaa"` _(optional)_ | Compliance domain — absent when ambiguous |
 | `pipeline_ms` | int | Total wall-clock time for the full pipeline |
 
 **Response `422 Unprocessable Entity` — extraction failure**

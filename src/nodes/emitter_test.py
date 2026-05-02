@@ -54,6 +54,21 @@ async def test_emit_sets_source_id_from_telemetry() -> None:
 
 
 @pytest.mark.asyncio
+async def test_emit_copies_domain_from_draft() -> None:
+    client = make_mock_client()
+    draft = AxiomDraft(status="critical", metric_value=94.0, anomaly_score=0.91, domain="aml")
+    result = await emit(draft, valid_telemetry(), client=client)
+    assert result.domain == "aml"
+
+
+@pytest.mark.asyncio
+async def test_emit_domain_is_none_when_draft_has_no_domain() -> None:
+    client = make_mock_client()
+    result = await emit(valid_draft(), valid_telemetry(), client=client)
+    assert result.domain is None
+
+
+@pytest.mark.asyncio
 async def test_emit_sets_emitted_at_to_current_utc_time() -> None:
     client = make_mock_client()
     before = datetime.now(timezone.utc)
