@@ -48,7 +48,14 @@ def judge(draft: AxiomDraft) -> AxiomDraft:
     Raises:
         JudgeRejection: on the first rule violation, with rule name and detail
     """
-    with logfire.span("judge", status=draft.status, anomaly_score=draft.anomaly_score):
+    with logfire.span(
+        "judge",
+        status=draft.status,
+        anomaly_score=draft.anomaly_score,
+        metric_value=draft.metric_value,
+        domain=draft.domain,
+        rules_evaluated=len(_RULES),
+    ):
         for rule in _RULES:
             rule(draft)  # raises JudgeRejection on violation
     return draft

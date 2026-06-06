@@ -24,6 +24,7 @@ class Settings(BaseSettings):
 
     # Observability
     logfire_token: str | None = None
+    otel_exporter_otlp_endpoint: str | None = None  # e.g. http://localhost:4318
     log_level: str = "INFO"
 
     # Pipeline tuning

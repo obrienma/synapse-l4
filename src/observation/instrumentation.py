@@ -13,6 +13,9 @@ Pattern: Additive Observability
 
 from __future__ import annotations
 
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
 import logfire
 
 from config import settings
@@ -25,11 +28,28 @@ def configure_logfire() -> None:
     Called once from main.py lifespan before any requests are handled.
     When LOGFIRE_TOKEN is not set, runs in local no-op mode — spans are
     created but not exported. The pipeline behaves identically either way.
+
+    When OTEL_EXPORTER_OTLP_ENDPOINT is set, an additional OTLP/HTTP exporter
+    is wired alongside Logfire so spans are forwarded to the local collector
+    (Tempo/Grafana stack) without removing Logfire as a secondary backend.
     """
+    additional: list[BatchSpanProcessor] = []
+    if settings.otel_exporter_otlp_endpoint:
+        endpoint = f"{settings.otel_exporter_otlp_endpoint.rstrip('/')}/v1/traces"
+        additional.append(BatchSpanProcessor(OTLPSpanExporter(endpoint=endpoint)))
+
     if settings.logfire_token:
-        logfire.configure(token=settings.logfire_token)
+        logfire.configure(
+            token=settings.logfire_token,
+            service_name="synapse-l4",
+            additional_span_processors=additional,
+        )
     else:
-        logfire.configure(send_to_logfire=False)
+        logfire.configure(
+            send_to_logfire=False,
+            service_name="synapse-l4",
+            additional_span_processors=additional,
+        )
 
 
 def instrument_fastapi(app: object) -> None:

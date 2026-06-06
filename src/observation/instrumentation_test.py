@@ -20,17 +20,30 @@ def test_configure_logfire_runs_without_token(monkeypatch: object) -> None:
 def test_configure_logfire_runs_with_token(monkeypatch: object) -> None:
     with patch("src.observation.instrumentation.settings") as mock_settings:
         mock_settings.logfire_token = "test-token"
+        mock_settings.otel_exporter_otlp_endpoint = None
         with patch("src.observation.instrumentation.logfire.configure") as mock_configure:
             configure_logfire()
-            mock_configure.assert_called_once_with(token="test-token")
+            mock_configure.assert_called_once_with(token="test-token", service_name="synapse-l4", additional_span_processors=[])
 
 
 def test_configure_logfire_uses_no_send_when_no_token() -> None:
     with patch("src.observation.instrumentation.settings") as mock_settings:
         mock_settings.logfire_token = None
+        mock_settings.otel_exporter_otlp_endpoint = None
         with patch("src.observation.instrumentation.logfire.configure") as mock_configure:
             configure_logfire()
-            mock_configure.assert_called_once_with(send_to_logfire=False)
+            mock_configure.assert_called_once_with(send_to_logfire=False, service_name="synapse-l4", additional_span_processors=[])
+
+
+def test_configure_logfire_adds_otlp_processor_when_endpoint_set() -> None:
+    with patch("src.observation.instrumentation.settings") as mock_settings:
+        mock_settings.logfire_token = None
+        mock_settings.otel_exporter_otlp_endpoint = "http://localhost:4318"
+        with patch("src.observation.instrumentation.logfire.configure") as mock_configure:
+            configure_logfire()
+            _, kwargs = mock_configure.call_args
+            processors = kwargs["additional_span_processors"]
+            assert len(processors) == 1
 
 
 def test_instrument_fastapi_calls_logfire() -> None:

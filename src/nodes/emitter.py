@@ -19,6 +19,7 @@ from datetime import UTC, datetime
 
 import logfire
 import redis.asyncio as aioredis
+from opentelemetry import trace
 
 from config import settings
 from src.clients.sentinel import SentinelClient
@@ -60,7 +61,16 @@ async def emit(
     )
 
     _client = client or _default_client()
-    with logfire.span("emit", source_id=axiom.source_id, status=axiom.status):
+    with logfire.span(
+        "emit",
+        source_id=axiom.source_id,
+        status=axiom.status,
+        anomaly_score=axiom.anomaly_score,
+        metric_value=axiom.metric_value,
+        domain=axiom.domain,
+    ):
+        span = trace.get_current_span()
+        span.set_attribute("axiom.emitted_at", axiom.emitted_at.isoformat())
         await _client.post_axiom(axiom)  # raises EmitError on failure
 
     return axiom

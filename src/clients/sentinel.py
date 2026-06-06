@@ -21,6 +21,7 @@ Stream key: synapse:axioms
 from __future__ import annotations
 
 import redis.asyncio as aioredis
+from opentelemetry.propagate import inject as otel_inject
 
 from src.models.axiom import Axiom, EmitError
 
@@ -47,6 +48,15 @@ class SentinelClient:
         }
         if axiom.domain is not None:
             fields["domain"] = axiom.domain
+
+        # Inject W3C TraceContext into the stream entry so Sentinel-L7 can
+        # resume the trace as a child span. No-op when there is no active span.
+        carrier: dict[str, str] = {}
+        otel_inject(carrier)
+        if "traceparent" in carrier:
+            fields["traceparent"] = carrier["traceparent"]
+        if carrier.get("tracestate"):
+            fields["tracestate"] = carrier["tracestate"]
         try:
             await self._redis.xadd(AXIOMS_STREAM, fields)  # type: ignore[arg-type]
         except Exception as exc:

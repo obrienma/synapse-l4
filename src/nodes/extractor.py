@@ -22,6 +22,7 @@ import instructor
 import logfire
 import logging
 from openai import AsyncOpenAI
+from opentelemetry import trace
 
 logger = logging.getLogger(__name__)
 from pydantic import ValidationError
@@ -147,13 +148,28 @@ async def extract(
     logger.debug("extract: payload keys=%s", list(telemetry.payload.keys()))
     fast = _try_direct_extraction(telemetry.payload)
     if fast is not None:
-        logfire.info("extract: fast path succeeded, skipping LLM", source_id=telemetry.source_id)
+        with logfire.span(
+            "extract",
+            source_id=telemetry.source_id,
+            status=fast.status,
+            anomaly_score=fast.anomaly_score,
+            metric_value=fast.metric_value,
+            domain=fast.domain,
+        ):
+            trace.get_current_span().set_attribute("extract.path", "fast")
         return fast
-    logger.warning("extract: fast path missed, falling through to LLM. payload=%s", telemetry.payload)
 
+    logger.warning("extract: fast path missed, falling through to LLM. payload=%s", telemetry.payload)
     _client = client or _default_client()
 
-    with logfire.span("extract", source_id=telemetry.source_id, llm_model=settings.llm_model):
+    with logfire.span(
+        "extract",
+        source_id=telemetry.source_id,
+        llm_model=settings.llm_model,
+    ):
+        span = trace.get_current_span()
+        span.set_attribute("extract.path", "llm")
+        span.set_attribute("extract.max_retries", settings.instructor_max_retries)
         try:
             return await _client.chat.completions.create(  # type: ignore[return-value]
                 model=settings.llm_model,

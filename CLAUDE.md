@@ -145,6 +145,9 @@ Lessons burned in during build — check these before touching the relevant area
 - **`respx` mock must be entered before `httpx.AsyncClient` construction**: `respx` patches at the transport level. A client constructed outside the `respx.mock` context makes real HTTP calls.
 - **`LogfireNotConfiguredWarning` in tests**: Any test that calls pipeline code without first calling `logfire.configure()` emits this warning. It is suppressed via `filterwarnings` in `pyproject.toml` — don't remove that config.
 
+### OTel / Observability
+- **Always pass `service_name="synapse-l4"` to `logfire.configure()`**: Without it, Tempo shows `unknown_service`. Logfire does not default to the project name. The `OTEL_SERVICE_NAME` env var also works but is less reliable than the explicit parameter.
+
 ### Dependencies
 - **`rediss://` (double-s) required for Upstash TLS**: `redis://` connects without TLS and Upstash rejects it silently. All Redis URLs must use `rediss://`.
 - **`instructor` deprecation warning via Logfire**: Logfire's instrumentation imports from `instructor.client` (deprecated in v2). The warning is transitive — it is not caused by application code and cannot be fixed here.
@@ -153,7 +156,7 @@ Lessons burned in during build — check these before touching the relevant area
 
 ## Current Build Status
 
-**Completed:** CLAUDE.md, .github/copilot-instructions.md, README.md, docs/ARCHITECTURE.md, docs/API.md, docs/DEV_GETTING_STARTED.md, docs/TESTING.md, docs/adr/ (0001–0005)
+**Completed:** CLAUDE.md, .github/copilot-instructions.md, README.md, docs/ARCHITECTURE.md, docs/API.md, docs/DEV_GETTING_STARTED.md, docs/TESTING.md, docs/adr/ (0001–0005), OTel/Phase 1 — OTLP export to Tempo + traceparent injection on Redis Stream + wide spans
 
 **Build order: top-down** (scaffold → models → nodes → API → clients → observation)
 

@@ -585,3 +585,62 @@ The Consume stage accepts `RawTelemetry` (loosely typed `dict[str, Any]` payload
 
 > **Q:** Why does `POST /ingest` accept `RawTelemetry` rather than `Axiom`?
 > **A:** If the route accepted a fully-typed `Axiom`, the pipeline would be reduced to a pass-through — EventHorizon would have to pre-validate the data that Synapse-L4 exists to validate. The whole point of Synapse-L4 is the transformation from unstructured → structured. The entry point must accept unstructured input.
+
+---
+
+## OTel Observability — Phase 1 (Synapse-L4)
+
+**Completed:** 2026-06-06
+**Files changed:** `pyproject.toml`, `config.py`, `.env.example`, `src/observation/instrumentation.py`, `src/clients/sentinel.py`, `src/nodes/emitter.py`, `src/nodes/judge.py`, `src/nodes/extractor.py`, `src/observation/instrumentation_test.py`
+
+---
+
+### Pattern Used
+
+**W3C TraceContext Carrier Injection**
+The active OTel span context is serialised into a `traceparent` string using the standard W3C TraceContext propagation format (`00-<trace-id>-<span-id>-<flags>`) and injected into the Redis Stream XADD entry as a top-level field. The downstream consumer (Sentinel-L7) extracts this field, reconstructs the parent context, and starts a child span — producing a single distributed trace that crosses the async Redis boundary.
+
+> **Q:** Why does `traceparent` go on the stream entry rather than inside the Axiom JSON?
+> **A:** `traceparent` is a transport-layer concern, not a business identity concern. The `Axiom` model represents a validated compliance signal — it should be identical regardless of which observability backend is in use. Putting `traceparent` inside `Axiom` would mean the domain model couples to observability infrastructure. If the Axiom schema is ever stored in a DB or replayed, you don't want stale trace IDs from the original emission baked into the record.
+
+**Wide Spans over Prometheus Pre-Aggregation**
+Every business-critical span (`extract`, `judge`, `emit`) carries the full set of attributes that a future query might need: `source_id`, `status`, `anomaly_score`, `metric_value`, `domain`, `extract.path`, `extract.max_retries`, `rules_evaluated`, `axiom.emitted_at`. The discipline: if it could be a TraceQL filter or grouping attribute, it goes on a span. Prometheus counters are reserved for alerting signals only.
+
+> **Q:** Why not add a `axioms_by_domain_total{domain="..."}` Prometheus counter?
+> **A:** Once a pre-aggregated counter exists, teams query it instead of the spans. The wide-attribute model degrades. TraceQL over `axiom.process` spans grouped by `domain` answers the same question with full context (trace IDs, timing, co-occurring attributes) — the counter adds nothing except cardinality lock-in. Keep counters for rates and thresholds that need to drive alerts.
+
+---
+
+### Anti-Pattern Avoided
+
+**Transport Concerns in Domain Models**
+Adding `traceparent` to the `Axiom` Pydantic model. Failure mode: the frozen model now carries infrastructure state, the schema version bumps whenever the propagation format changes, and domain-layer tests need to construct fake trace IDs.
+
+> **Q:** What is the failure mode of baking `traceparent` into `Axiom`?
+> **A:** Axioms are frozen (`model_config = ConfigDict(frozen=True)`) — they are immutable business records. A trace context is ephemeral infrastructure state that is only valid for the duration of one pipeline execution. Mixing the two means replaying an Axiom (e.g. for retry or audit) carries a stale, broken trace ID. Keep transport state in the transport layer.
+
+---
+
+### Challenges
+
+**Logfire `additional_span_processors` + MagicMock settings patch**
+When tests patched `settings` via `patch("...settings")`, the mock's `otel_exporter_otlp_endpoint` attribute is a truthy `MagicMock` object — not `None`. This caused `instrumentation.py` to construct a real `BatchSpanProcessor` and `OTLPSpanExporter` (pointing at a garbage URL) during every test that patched settings. Fix: explicitly set `mock_settings.otel_exporter_otlp_endpoint = None` in tests that do not want the OTLP path active. Root cause: `MagicMock` attributes are truthy by default; any conditional on a mock attribute must be explicitly controlled.
+
+**`service.name = unknown_service` when `service_name` is not passed to `logfire.configure()`**
+Spans arrived in Tempo with `service: unknown_service`. Root cause: `service.name` is an OTel resource attribute set at `TracerProvider` initialisation time. Logfire sets it only when `service_name` is passed explicitly to `configure()` — it does not default to the `pyproject.toml` project name or the process name. The additional OTLP exporter shares the same `TracerProvider`, so it inherits whatever resource was configured there. Fix: always pass `service_name="synapse-l4"` to `logfire.configure()`. The standard `OTEL_SERVICE_NAME` env var also works but relies on the env being loaded before the SDK initialises — the explicit parameter is more reliable.
+
+**`sed` with pipe-delimited substitution corrupted `.env`**
+Using `|` as the sed delimiter (`sed -i 's|...|...|'`) failed because the shell expanded the `|` as a pipe operator before sed received it, leaving a literal `|SENTINEL_REDIS_URL=redis://localhost:6379` as the URL value. This produced an `idna` codec error at Redis connection time (the URL parser tried to resolve the pipe character as a hostname). Fix: edit the `.env` directly. Lesson: sed delimiter substitution with `|` is safe in most contexts, but the full replacement string was pasted into a shell that consumed it differently.
+
+---
+
+### Decisions
+
+**Logfire kept as optional secondary exporter, not replaced**
+The plan explicitly states "do not rip out Logfire." The implementation uses `logfire.configure(additional_span_processors=[...])` to add the local OTLP exporter alongside Logfire's own exporter. When `LOGFIRE_TOKEN` is absent, Logfire runs in no-op mode but the local OTLP exporter still fires. This means the observability stack works end-to-end in development with no Logfire account.
+
+> **Q:** Why keep Logfire instead of switching to raw OTel SDK directly?
+> **A:** Logfire IS OTel — it wraps the OTel SDK and adds structured logging helpers, auto-instrumentation, and a hosted backend. Replacing it with raw SDK would mean reimplementing those features. The dual-exporter approach (Logfire + local Tempo) costs one config line and zero additional code.
+
+**`extract.path` attribute instead of two separate span names**
+The fast path and LLM path both emit a span named `extract`. A `extract.path` attribute (`"fast"` or `"llm"`) distinguishes them. Alternative considered: separate span names (`extract.fast` / `extract.llm`). Rejected because TraceQL queries over span name become fragile if the path split is refactored — the attribute model is additive and doesn't require query updates when new paths are added.

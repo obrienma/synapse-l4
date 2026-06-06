@@ -1,0 +1,1 @@
+Phase 1 complete: Synapse OTLP traces forwarded to local Tempo; traceparent injected into synapse:axioms Redis Stream entries.
