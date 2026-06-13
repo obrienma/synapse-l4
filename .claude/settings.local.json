@@ -2,7 +2,11 @@
   "permissions": {
     "allow": [
       "Bash(uv run:*)",
-      "Bash(git stash *)"
+      "Bash(git stash *)",
+      "Read(//home/amanda/.claude/**)",
+      "Read(//home/amanda/.claude/skills/**)",
+      "Bash(git -C /home/amanda/dev/synapse-l4 diff .claude/settings.local.json)",
+      "Bash(curl *)"
     ]
   }
 }
