@@ -8,5 +8,19 @@
       "Bash(git -C /home/amanda/dev/synapse-l4 diff .claude/settings.local.json)",
       "Bash(curl *)"
     ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v jq >/dev/null 2>&1; then cmd=$(jq -r \".tool_input.command // empty\"); else cmd=$(cat); fi; printf \"%s\" \"$cmd\" | grep -qE \"git[[:space:]]+(commit|cm)([^[:alnum:]]|$)\" && printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\",\"permissionDecisionReason\":\"Journal check — before this commit, follow the journal-anki skill (~/.claude/skills/journal-anki.md) and write the docs/journal entry for this phase. Approve only if it is written. Do NOT add to LEARNING_LOG.md.\",\"additionalContext\":\"A git commit is about to run. Per CLAUDE.md, ensure the journal-anki entry for this phase exists under docs/journal/ before committing. If not yet written, stop and write it now.\"}}' || true",
+            "statusMessage": "Journal check before commit"
+          }
+        ]
+      }
+    ]
   }
 }

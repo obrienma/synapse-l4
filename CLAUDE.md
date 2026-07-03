@@ -210,3 +210,10 @@ Follow these rules for every interaction:
 8. **Checkpoint Questions:** After each completed phase, ask me to explain back what was built and *why* — e.g. "Why does the Judge run after Instructor extraction, not inside the Instructor validator?"
 9. **Name the Anti-Pattern Avoided:** When a design decision sidesteps a trap (Instructor vs. prompt engineering for JSON, frozen model vs. mutable dict, Judge stage vs. inline assertion), explicitly name the anti-pattern and the failure mode it prevents.
 10. **Ask before completing TODOs.**
+
+
+## Journaling
+At the end of any development phase, before proposing a commit or when the user requests a commit message, follow the
+journal-anki skill at `~/.claude/skills/journal-anki.md` to write a journal
+entry. This repo's old LEARNING_LOG.md convention is superseded by this —
+do not add new entries to LEARNING_LOG.md.
