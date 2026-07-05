@@ -30,6 +30,7 @@ dev = [
 asyncio_mode = "auto"
 testpaths = ["src"]
 python_files = ["*_test.py"]
+pythonpath = ["."]  # repo root — needed for tests/live/ to import config and src.*
 
 [tool.mypy]
 python_version = "3.12"

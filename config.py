@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     anthropic_api_key: str = ""
     llm_model: str = "gpt-4o-mini"
+    llm_base_url: str | None = None  # e.g. http://<tailscale-host>:11434/v1 (Ollama)
     instructor_max_retries: int = 3
 
     # Downstream — Redis Streams delivery (ADR-0016)

@@ -171,20 +171,52 @@ def test_ingest_returns_422_on_judge_rejection(client, mock_pipeline):
 
 | Scenario | Why not automated |
 |---|---|
-| Real LLM calls (OpenAI / Anthropic) | Cost, latency, non-determinism — all tests mock Instructor |
 | Live Sentinel-L7 delivery | Integration test — mocked in unit tests via `respx` |
 | Live EventHorizon WS feed | Mocked in consumer tests |
 | Logfire span structure | Observability assertions are manual / Logfire UI |
+
+Real LLM calls used to be in this table. As of ADR-0008, `extract()`'s LLM path has a
+live test tier (below) — it's no longer a manual-only gap, just a second local
+command.
+
+---
+
+## Live Test Tier (ADR-0008)
+
+`tests/live/` exercises `extract()`'s LLM fallback path against a real Ollama
+endpoint instead of a mock. It's outside `testpaths`, so it never runs under a bare
+`uv run pytest` — invoke it explicitly:
+
+```bash
+uv run pytest tests/live/ -v
+```
+
+**Gating:** `tests/live/conftest.py` probes the Ollama host's `/api/tags` with a
+short timeout before any test runs. If `LLM_BASE_URL` is unset, or the host doesn't
+respond, tests **skip** with a clear reason — they never fail on host downtime. This
+is a reachability gate, not a human opt-in flag: once `LLM_BASE_URL` points at a
+real host, the tier runs automatically as part of that command.
+
+**Assertions stay loose on purpose:** these tests check schema/enum conformance
+(`AxiomDraft` construction succeeds, `status`/`domain` land in the valid enum,
+`anomaly_score` in `[0.0, 1.0]`) — never exact field values. A real model's output
+for an ambiguous fixture isn't reproducible run to run the way a mock's return value
+is; asserting exact values here would just be flaky by construction.
+
+**Local only, no CI.** This tier requires a Tailscale-reachable Ollama host running
+on a developer machine. There's no intent to provision a CI-joined tailnet for it —
+`tests/live/` is not wired into any GitHub Actions workflow.
 
 ---
 
 ## Running Tests
 
 ```bash
-uv run pytest                        # Full suite
+uv run pytest                        # Full suite (mocked, tests/live/ excluded)
 uv run pytest -x                     # Stop on first failure
 uv run pytest src/nodes/judge_test.py  # Single file
 uv run pytest -k "test_judge"        # Filter by name pattern
 uv run pytest --watch                # Watch mode
 uv run pytest --cov=src              # Coverage report
+uv run pytest tests/live/ -v         # Live Ollama tier — see above
 ```

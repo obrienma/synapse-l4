@@ -123,7 +123,9 @@ def _default_client() -> instructor.AsyncInstructor:
     # Design Decision: client is constructed lazily (on first call) rather than
     # at module import time. This lets tests inject a mock without patching
     # module-level state, and avoids requiring OPENAI_API_KEY at import.
-    return instructor.from_openai(AsyncOpenAI(api_key=settings.openai_api_key))
+    return instructor.from_openai(
+        AsyncOpenAI(api_key=settings.openai_api_key, base_url=settings.llm_base_url)
+    )
 
 
 async def extract(
