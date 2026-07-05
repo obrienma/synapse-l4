@@ -32,6 +32,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+import logfire
 import websockets
 import websockets.exceptions
 
@@ -68,9 +69,14 @@ def _event_to_telemetry(data: dict[str, Any]) -> RawTelemetry:
 
 async def _run_pipeline(telemetry: RawTelemetry) -> None:
     """Run the full Validation Node pipeline for one telemetry packet."""
-    draft = await extract(telemetry)
-    judge(draft)
-    await emit(draft, telemetry)
+    # Unlike the /ingest route, this call path has no ambient FastAPI
+    # request span to nest under, so extract/judge/emit would each start
+    # their own root span (three trace IDs per event) without an explicit
+    # parent span here.
+    with logfire.span("run_pipeline", source_id=telemetry.source_id):
+        draft = await extract(telemetry)
+        judge(draft)
+        await emit(draft, telemetry)
 
 
 async def _enqueue(raw: str, queue: asyncio.Queue[RawTelemetry]) -> None:

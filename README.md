@@ -204,14 +204,6 @@ Synapse-L4 emits wide spans across all four pipeline stages via **Logfire**, wit
 * [ ] **Trace Parenting:** Wrap `extract`/`judge`/`emit` in a single parent span inside `_run_pipeline()` to collapse the three-trace-ID fragmentation into one trace per event.
 * [ ] **Learning Log → Journal Migration:** Finish migrating remaining `LEARNING_LOG.md` phase entries into `docs/journal.md` with round-trip Anki export (in progress — Phases 1–3 done).
 
-
-## 🐛 Known issues
-
-- [ ] **Fragmented traces** : `_run_pipeline()` doesn't wrap
-      `extract`/`judge`/`emit` in a parent span — three trace IDs per
-      pipeline run instead of one.
-
-
 ### 📦 Build History
 
 <details>
