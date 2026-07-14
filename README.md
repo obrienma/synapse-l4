@@ -1,10 +1,16 @@
-# 🧠 Synapse-L4 — AI Logic & Evaluation Sidecar
+<p align="center">
+  <img width="200" alt="Synapse-L4" src="docs/assets/Synapse-L4-logo.png" />
+</p>
+
+# AI Logic & Evaluation Sidecar
 
 ![ezgif-synapse-logfile](https://github.com/user-attachments/assets/dd1445ba-cc1f-4ee7-8a37-650b50d53d94)
 
-Synapse-L4 is **"the Brain"** in a three-system telemetry architecture. It transforms raw, high-throughput telemetry from EventHorizon into deterministic, schema-validated **Axioms** that Sentinel-L7 can safely cache and act upon.
+**Synapse-L4** is the validation node between EventHorizon and Sentinel-L7 — it transforms raw, high-throughput telemetry into deterministic, schema-validated **Axioms** that Sentinel-L7 can safely cache and act upon.
 
-Architecturally, this project is a production-grade blueprint for **structured-generation validation at a system boundary**. It demonstrates how to force LLM output through a typed contract — Consume → Extract → Evaluate → Emit — with a deterministic fast path, a mandatory rule-based judge pass, and an immutable emission model.
+Architecturally, this project is a blueprint for **structured-generation validation at a system boundary**. It demonstrates how to force LLM output through a typed contract — Consume → Extract → Evaluate → Emit — with a deterministic fast path, a mandatory rule-based judge pass, and an immutable emission model.
+
+It's one node in the Rhizome Risk system, but its own architectural contract is scoped to these two neighbors; it doesn't know or care that the rest of the system exists.
 
 ---
 
@@ -50,7 +56,7 @@ flowchart LR
 | System | Role | Tech | Responsibility |
 |---|---|---|---|
 | ⚡ **EventHorizon** | Nervous System | TypeScript, Fastify, RabbitMQ | Real-time telemetry ingestion, reactive data plane |
-| 🧠 **Synapse-L4** | Brain | Python, FastAPI, Pydantic + Instructor | Specification-driven orchestration, LLM contract enforcement |
+| 🧠 **Synapse-L4** | Validation Node | Python, FastAPI, Pydantic + Instructor | Specification-driven orchestration, LLM contract enforcement |
 | 🛡️ **Sentinel-L7** | Gatekeeper | Laravel, Redis Streams, Upstash Vector | Semantic caching, API gateway, financial/transactional state |
 
 ## 🧰 Stack
@@ -67,7 +73,7 @@ flowchart LR
 
 **🔭 Observability**
 
-- **Logfire:** Wide spans across the pipeline, OTLP export to a companion Grafana/Tempo stack, and accuracy benchmarking for extraction quality.
+- **Logfire:** Wide spans across the pipeline, OTLP export to Rhizome Lens, and accuracy benchmarking for extraction quality.
 
 **🧪 Engineering & Test Tooling**
 
@@ -174,11 +180,12 @@ Data flows **one direction only** — no stage calls back to a previous stage. E
 
 ## 🔭 Observability
 
-Synapse-L4 emits wide spans across all four pipeline stages via **Logfire**, with OTLP export to a companion **[Grafana monitoring stack](https://github.com/obrienma/rhizome-observability#readme)** (Tempo + Prometheus) — the same collector EventHorizon and Sentinel-L7 export to, so a single telemetry event can in principle be followed across all three systems.
+Synapse-L4 emits wide spans across all four pipeline stages via **Logfire**, with OTLP export to **[Rhizome Lens](https://github.com/obrienma/rhizome-observability#readme)** — the same self-hosted OTel Collector → Tempo/Loki/Prometheus → Grafana stack that EventHorizon and Sentinel-L7 export to, so a single telemetry event can in principle be followed across all three pipeline stages.
 
 * **Structured generation accuracy benchmarking** — Logfire tracks extraction outcomes so LLM reliability is measurable over time, not just observed anecdotally.
 * **`traceparent` on Redis Streams** — trace context is injected into the `XADD` payload so Sentinel-L7 can continue the same trace downstream (see [docs/journal.md](docs/journal.md), OTel Phase 1).
 * **No-op when unconfigured** — without `LOGFIRE_TOKEN` or `OTEL_EXPORTER_OTLP_ENDPOINT` set, instrumentation calls no-op silently rather than failing startup.
+* **Evaluated from outside, not instrumented by it** — Arbiter-L8 calls this service's HTTP/MCP surface to score Axiom quality offline and online, out-of-band. Synapse-L4 has no awareness of Arbiter-L8 and never calls it.
 
 ## 📚 Docs
 
