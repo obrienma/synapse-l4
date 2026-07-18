@@ -191,14 +191,14 @@ Synapse-L4 emits wide spans across all four pipeline stages via **Logfire**, wit
 
 | File | Contents | Last updated |
 | --- | --- | --- |
-| [README.md](README.md) | Project overview | 2026-07-03 |
+| [README.md](README.md) | Project overview | 2026-07-18 |
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Pipeline stages, data flow, integration points | 2026-05-01 |
 | [API.md](docs/API.md) | Endpoints, request/response schemas | 2026-05-01 |
 | [DEV_GETTING_STARTED.md](docs/DEV_GETTING_STARTED.md) | Full local setup walkthrough | 2026-04-01 |
 | [TESTING.md](docs/TESTING.md) | Test strategy, per-phase patterns | 2026-03-31 |
 | [AGENT_DIRECTIVES.md](docs/AGENT_DIRECTIVES.md) | Dual-LLM (Claude Code / Copilot) agent conventions | 2026-06-13 |
 | [journal.md](docs/journal.md) | Engineering journal — one entry per phase | 2026-06-13 |
-| [adr/](docs/adr/) | Architecture Decision Records (0001–0007) | 2026-06-06 |
+| [adr/](docs/adr/) | Architecture Decision Records (0001–0008) | 2026-07-18 |
 
 ## 🐛 Known Issues
 
@@ -226,6 +226,7 @@ Synapse-L4 emits wide spans across all four pipeline stages via **Logfire**, wit
 * **Domain Field + ADR 0007:** Optional `domain` field on `Axiom`/`AxiomDraft` for policy namespace routing; deduplication responsibility formally delegated to Sentinel-L7.
 * **OTel Phase 1:** OTLP export to Tempo plus `traceparent` injection on the Redis Stream `XADD` payload.
 * **LL → Journal Migration:** Began migrating `LEARNING_LOG.md` phase entries to `docs/journal.md`, including Anki cloze round-trip.
+* **`saas` domain support:** Added `"saas"` to `ComplianceDomain` in all three places it's independently enumerated (`axiom.py`'s `Literal`, `extractor.py`'s `_VALID_DOMAINS` frozenset, and the LLM extraction prompt) — closes the one dependency Xylem-L6's ADR-0007 named on this side, ahead of Xylem-L6's own `POST /ingest` wiring landing.
 
 </details>
 

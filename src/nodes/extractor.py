@@ -36,12 +36,12 @@ You are a telemetry analysis system. Given a raw telemetry payload, extract:
 - status: overall system state — "nominal", "degraded", or "critical"
 - metric_value: the primary numeric metric from the payload (e.g. CPU %, memory %, error rate)
 - anomaly_score: your confidence that this reading represents an anomaly, from 0.0 (normal) to 1.0 (critical anomaly)
-- domain: the compliance domain this event belongs to — one of "aml", "gdpr", "hipaa", or null if it cannot be determined
+- domain: the compliance domain this event belongs to — one of "aml", "gdpr", "hipaa", "saas", or null if it cannot be determined
 
 Be precise. Do not invent values not present or strongly implied by the payload.
 """
 
-_VALID_DOMAINS: frozenset[str] = frozenset({"aml", "gdpr", "hipaa"})
+_VALID_DOMAINS: frozenset[str] = frozenset({"aml", "gdpr", "hipaa", "saas"})
 
 
 def _valid_domain(value: object) -> ComplianceDomain | None:

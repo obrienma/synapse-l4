@@ -72,7 +72,7 @@ main.py          # FastAPI app entrypoint
 ## Axiom Shape
 
 ```python
-ComplianceDomain = Literal["aml", "gdpr", "hipaa"]
+ComplianceDomain = Literal["aml", "gdpr", "hipaa", "saas"]
 
 class Axiom(BaseModel):
     model_config = ConfigDict(frozen=True)  # immutable
@@ -130,6 +130,7 @@ Lessons burned in during build — check these before touching the relevant area
 - **`instructor_max_retries` multiplier**: Each `extract()` call on an unstructured payload costs up to `1 + max_retries` LLM calls. At the default of 3, one struggling message burns 4 calls. Keep `INSTRUCTOR_MAX_RETRIES=1` in `.env` for development.
 - **`_try_direct_extraction` must catch both `KeyError` and `ValidationError`**: `KeyError` = missing field; `ValidationError` = present but invalid (e.g. `status="unknown"`, `anomaly_score=2.5`). Catching only `KeyError` lets an invalid-but-present payload bypass the LLM and produce a corrupt `AxiomDraft`.
 - **`_valid_domain()` helper prevents ValidationError cascade on bad domain values**: Passing an unrecognised domain string directly to `AxiomDraft()` raises `ValidationError`, which causes Shape 1 to fall through to Shape 2, then to the LLM — wasting a call for an otherwise-valid structured payload. `_valid_domain()` sanitises the value to `None` before construction.
+- **`ComplianceDomain` is enumerated in three independent places, not one**: the `Literal` itself (`axiom.py`), `extractor.py`'s `_VALID_DOMAINS` frozenset (consulted by `_valid_domain()`, not derived from the Literal), and the LLM system prompt's text listing valid domains. Adding a new domain (e.g. `"saas"`, added for Xylem-L6's ADR-0007 integration) means updating all three by hand — missing one means the new domain either fails validation (`_VALID_DOMAINS` stale) or the LLM never suggests it (prompt stale) despite the type system claiming it's valid. No single source of truth exists for this today.
 - **Shape 2 requires a structural key guard**: Without `if "raw" not in payload and "processed" not in payload: return None`, Shape 2 matches *any* payload using fallback values (`status="degraded"`, `metric_value=0.0`), silently swallowing unstructured payloads that should reach the LLM.
 
 ### Async / WebSocket

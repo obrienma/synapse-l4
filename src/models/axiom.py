@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 # Compliance domains — first hyphen-delimited segment of policy filenames in Sentinel-L7.
 # Extend this Literal as new policy corpora are added.
-ComplianceDomain = Literal["aml", "gdpr", "hipaa"]
+ComplianceDomain = Literal["aml", "gdpr", "hipaa", "saas"]
 
 
 class Axiom(BaseModel):

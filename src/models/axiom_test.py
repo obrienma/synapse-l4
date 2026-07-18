@@ -111,7 +111,7 @@ def test_axiom_domain_defaults_to_none() -> None:
 
 
 def test_axiom_accepts_valid_domain() -> None:
-    for domain in ("aml", "gdpr", "hipaa"):
+    for domain in ("aml", "gdpr", "hipaa", "saas"):
         axiom = valid_axiom(domain=domain)
         assert axiom.domain == domain
 
